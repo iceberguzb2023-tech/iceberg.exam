@@ -213,7 +213,7 @@ export default function EditTestPage({ params }: { params: Promise<{ id: string 
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Bosqich (Etap)</label>
                  <div className="grid grid-cols-3 gap-2">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                    {[1, 2, 3, 4, 5, "kids"].map((i) => (
                       <button
                         key={i}
                         onClick={() => setTest({ ...test, level: `${i}-etap` })}
