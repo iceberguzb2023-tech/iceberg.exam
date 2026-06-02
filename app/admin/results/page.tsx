@@ -216,7 +216,7 @@ export default function ResultsPage() {
           >
             <option value="ALL">Barcha {filter === "STUDENT" ? "Etaplar" : "Darajalar"}</option>
             {filter === "STUDENT" ? (
-              [1, 2, 3, 4, 5, 6].map(num => (
+              [1, 2, 3, 4, 5, "kids"].map(num => (
                 <option key={num} value={`${num}-etap`}>{num}-etap</option>
               ))
             ) : (
