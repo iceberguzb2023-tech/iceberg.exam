@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Clock, FileUp } from "lucide-react"
+import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Clock, FileUp, Music, Volume2 } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
@@ -18,6 +18,7 @@ export default function NewTestPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
+  const [audioUploadingIdx, setAudioUploadingIdx] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [newTest, setNewTest] = useState({
@@ -26,7 +27,7 @@ export default function NewTestPage() {
     level: "1-etap",
     timeLimit: 30,
     questions: [
-      { text: "", type: "MCQ", images: [] as string[], options: ["", "", "", ""], correctAnswer: "A" }
+      { text: "", type: "MCQ", images: [] as string[], options: ["", "", "", ""], correctAnswer: "A", audio: null as string | null }
     ]
   })
 
@@ -39,14 +40,14 @@ export default function NewTestPage() {
 
   const addQuestionAt = (idx: number) => {
     const newQuestions = [...newTest.questions]
-    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A" })
+    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null })
     setNewTest({ ...newTest, questions: newQuestions })
   }
 
   const addQuestionFirst = () => {
     setNewTest({
       ...newTest,
-      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A" }, ...newTest.questions]
+      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null }, ...newTest.questions]
     })
   }
 
@@ -97,6 +98,39 @@ export default function NewTestPage() {
     updateQuestion(qIdx, { images: newImages })
   }
 
+  const handleAudioUpload = async (idx: number, file: File) => {
+    if (!file) return
+    setAudioUploadingIdx(idx)
+
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = async () => {
+      const base64 = reader.result
+      try {
+        const res = await fetch("/api/admin/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file: base64,
+            folder: (newTest.title || "ice-exams").trim()
+          }),
+        })
+        const data = await res.json()
+        if (data.url) {
+          updateQuestion(idx, { audio: data.url })
+        }
+      } catch (err) {
+        toast.error("Audio yuklashda xatolik yuz berdi!")
+      } finally {
+        setAudioUploadingIdx(null)
+      }
+    }
+  }
+
+  const removeAudio = (qIdx: number) => {
+    updateQuestion(qIdx, { audio: null })
+  }
+
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -136,7 +170,8 @@ export default function NewTestPage() {
               type,
               options,
               correctAnswer,
-              images: []
+              images: [],
+              audio: null
             }
           })
 
@@ -366,6 +401,14 @@ export default function NewTestPage() {
                               Rasm qo'shish
                             </div>
                           </div>
+
+                          <div className="relative">
+                            <input type="file" accept="audio/*" onChange={(e) => e.target.files && handleAudioUpload(qIdx, e.target.files[0])} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                            <div className="px-4 py-2 bg-white/5 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 border border-white/5 hover:bg-white/10 transition-all font-outfit">
+                              {audioUploadingIdx === qIdx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Music className="w-3 h-3" />}
+                              Audio qo'shish
+                            </div>
+                          </div>
                         </div>
 
                         {/* Image Grid Display */}
@@ -382,6 +425,24 @@ export default function NewTestPage() {
                                 </button>
                               </div>
                             ))}
+                          </div>
+                        )}
+
+                        {/* Audio Preview */}
+                        {q.audio && (
+                          <div className="flex items-center gap-4 p-4 bg-slate-950 rounded-lg border border-white/5">
+                            <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20 flex-shrink-0">
+                              <Volume2 className="w-5 h-5 text-indigo-400" />
+                            </div>
+                            <audio controls className="flex-1 h-10">
+                              <source src={q.audio} />
+                            </audio>
+                            <button
+                              onClick={() => removeAudio(qIdx)}
+                              className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all flex-shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         )}
                       </div>

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     // Calculate score
     const test = await prisma.test.findUnique({
       where: { id: testId },
-      include: { questions: true },
+      include: { questions: { orderBy: { order: "asc" } } },
     })
 
     if (!test) {

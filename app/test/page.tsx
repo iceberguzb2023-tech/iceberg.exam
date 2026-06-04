@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
+import QuestionAudio from "@/components/QuestionAudio"
 
 import { Suspense } from "react"
 
@@ -35,6 +36,7 @@ function TestContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null)
+  const [audioPlayCount, setAudioPlayCount] = useState<Record<string, number>>({})
   
   const MAX_TAB_SWITCHES = 3
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -560,6 +562,18 @@ function TestContent() {
                     ))}
                   </div>
                 )}
+
+                {/* Audio Player */}
+                <div className="mb-6">
+                  <QuestionAudio
+                    audioUrl={currentQuestion.audio}
+                    playCount={audioPlayCount[currentQuestion.id] || 0}
+                    onPlayCountChange={(count) =>
+                      setAudioPlayCount((prev) => ({ ...prev, [currentQuestion.id]: count }))
+                    }
+                    resetKey={currentIdx}
+                  />
+                </div>
 
                 <div className="mt-auto">
                   {currentQuestion.type === "MCQ" ? (

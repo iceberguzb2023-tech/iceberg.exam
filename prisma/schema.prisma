@@ -1,10 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Test {
+  id          String       @id @default(cuid())
+  title       String
+  role        Role
+  level       String?
+  timeLimit   Int?
+  createdAt   DateTime     @default(now())
+  questions   Question[]
+  submissions Submission[]
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  text          String
+  type          QuestionType
+  images        String[]
+  options       String[]
+  correctAnswer String?
+  testId        String
+  order         Int          @default(0)
+  audio         String?
+  test          Test         @relation(fields: [testId], references: [id], onDelete: Cascade)
+}
+
+model Submission {
+  id             String   @id @default(cuid())
+  testId         String
+  firstName      String
+  lastName       String
+  role           Role
+  level          String?
+  answers        Json
+  score          Int
+  totalQuestions Int
+  createdAt      DateTime @default(now())
+  test           Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
 }
 
 enum Role {
@@ -15,40 +53,4 @@ enum Role {
 enum QuestionType {
   MCQ
   OPEN
-}
-
-model Test {
-  id          String     @id @default(cuid())
-  title       String
-  role        Role
-  level       String?    // O'quvchi uchun: Etap
-  timeLimit   Int?       // Test uchun vaqt (minutda)
-  createdAt   DateTime   @default(now())
-  questions   Question[]
-  submissions Submission[]
-}
-
-model Question {
-  id            String       @id @default(cuid())
-  text          String
-  type          QuestionType
-  images        String[]
-  options       String[]     // MCQ uchun: ["A", "B", "C", "D"]
-  correctAnswer String?      // MCQ uchun: "A", ochiq savol uchun ixtiyoriy
-  testId        String
-  test          Test         @relation(fields: [testId], references: [id], onDelete: Cascade)
-}
-
-model Submission {
-  id             String   @id @default(cuid())
-  testId         String
-  test           Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
-  firstName      String
-  lastName       String
-  role           Role
-  level          String?  // Etap (student) or Specialization (teacher)
-  answers        Json     // { questionId: string, answer: string, isCorrect: boolean } ro'yxati
-  score          Int
-  totalQuestions Int
-  createdAt      DateTime @default(now())
 }

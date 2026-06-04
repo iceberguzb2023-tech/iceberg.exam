@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const tests = await prisma.test.findMany({
-      include: { questions: true },
+      include: { questions: { orderBy: { order: "asc" } } },
       orderBy: { createdAt: "desc" },
     })
     return NextResponse.json(tests)
@@ -32,12 +32,14 @@ export async function POST(req: NextRequest) {
         level,
         timeLimit: timeLimit ? parseInt(timeLimit.toString()) : null,
         questions: {
-          create: questions.map((q: any) => ({
+          create: questions.map((q: any, i: number) => ({
             text: q.text,
             type: q.type as "MCQ" | "OPEN",
             images: q.images || [],
             options: q.options,
             correctAnswer: q.correctAnswer,
+            audio: q.audio || null,
+            order: i,
           })),
         },
       },

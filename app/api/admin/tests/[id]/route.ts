@@ -15,7 +15,7 @@ export async function GET(
       where: { id },
       include: {
         questions: {
-          orderBy: { id: 'asc' }
+          orderBy: { order: 'asc' }
         }
       }
     })
@@ -39,70 +39,72 @@ export async function PUT(
     const body = await req.json()
     const { title, role, level, questions, timeLimit } = body
 
-    // Update test and questions in a transaction
-    const updatedTest = await prisma.$transaction(async (tx) => {
-      // 1. Update basic test info
-      const test = await tx.test.update({
-        where: { id },
-        data: { 
-          title, 
-          role, 
-          level, 
-          timeLimit: timeLimit ? parseInt(timeLimit.toString()) : null 
-        }
-      })
-
-      // 2. Get existing questions to determine deletes
-      const existingQuestions = await tx.question.findMany({
-        where: { testId: id },
-        select: { id: true }
-      })
-      const existingIds = existingQuestions.map(q => q.id)
-      
-      const incomingQuestionsWithId = questions.filter((q: any) => q.id && existingIds.includes(q.id))
-      const incomingQuestionsWithoutId = questions.filter((q: any) => !q.id || !existingIds.includes(q.id))
-      const incomingIds = incomingQuestionsWithId.map((q: any) => q.id)
-
-      // 3. Delete questions not in the incoming list
-      const idsToDelete = existingIds.filter(id => !incomingIds.includes(id))
-      if (idsToDelete.length > 0) {
-        await tx.question.deleteMany({
-          where: { id: { in: idsToDelete } }
-        })
-      }
-
-      // 4. Update existing questions (ID is preserved)
-      for (const q of incomingQuestionsWithId) {
-        await tx.question.update({
-          where: { id: q.id },
-          data: {
-            text: q.text,
-            type: q.type,
-            images: q.images || [],
-            options: q.options,
-            correctAnswer: q.correctAnswer
-          }
-        })
-      }
-
-      // 5. Create new questions
-      if (incomingQuestionsWithoutId.length > 0) {
-        await tx.question.createMany({
-          data: incomingQuestionsWithoutId.map((q: any) => ({
-            text: q.text,
-            type: q.type,
-            images: q.images || [],
-            options: q.options,
-            correctAnswer: q.correctAnswer,
-            testId: id
-          }))
-        })
-      }
-
-      return test
+    // 1. Get existing questions to determine deletes (read — no transaction needed)
+    const existingQuestions = await prisma.question.findMany({
+      where: { testId: id },
+      select: { id: true }
     })
+    const existingIds = existingQuestions.map(q => q.id)
 
-    return NextResponse.json(updatedTest)
+    const incomingQuestionsWithId = questions.filter((q: any) => q.id && existingIds.includes(q.id))
+    const incomingQuestionsWithoutId = questions.filter((q: any) => !q.id || !existingIds.includes(q.id))
+    const incomingIds = incomingQuestionsWithId.map((q: any) => q.id)
+    const idsToDelete = existingIds.filter(eid => !incomingIds.includes(eid))
+
+    const allQuestionIds = questions.map((q: any) => q.id).filter(Boolean)
+    const timeLimitValue = timeLimit ? parseInt(timeLimit.toString()) : null
+
+    // 2. Batch transaction — all writes in one round-trip
+    const batch: any[] = [
+      prisma.test.update({
+        where: { id },
+        data: { title, role, level, timeLimit: timeLimitValue }
+      })
+    ]
+
+    // Delete removed questions
+    if (idsToDelete.length > 0) {
+      batch.push(prisma.question.deleteMany({
+        where: { id: { in: idsToDelete } }
+      }))
+    }
+
+    // Update existing questions
+    for (const q of incomingQuestionsWithId) {
+      const orderIndex = allQuestionIds.indexOf(q.id)
+      batch.push(prisma.question.update({
+        where: { id: q.id },
+        data: {
+          text: q.text,
+          type: q.type,
+          images: q.images || [],
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          audio: q.audio || null,
+          order: orderIndex
+        }
+      }))
+    }
+
+    // Create new questions
+    if (incomingQuestionsWithoutId.length > 0) {
+      batch.push(prisma.question.createMany({
+        data: incomingQuestionsWithoutId.map((q: any, i: number) => ({
+          text: q.text,
+          type: q.type,
+          images: q.images || [],
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          audio: q.audio || null,
+          order: allQuestionIds.length + i,
+          testId: id
+        }))
+      }))
+    }
+
+    await prisma.$transaction(batch)
+
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error("Test update error:", err)
     return NextResponse.json({ error: "Yangilashda xatolik" }, { status: 500 })

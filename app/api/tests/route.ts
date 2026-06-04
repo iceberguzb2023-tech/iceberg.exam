@@ -13,7 +13,9 @@ export async function GET(req: NextRequest) {
         level: level || undefined,
       },
       include: {
-        questions: true,
+        questions: {
+          orderBy: { order: "asc" }
+        },
       },
       orderBy: {
         createdAt: "desc",
