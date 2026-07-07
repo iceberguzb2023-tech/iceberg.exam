@@ -61,7 +61,14 @@ export default function SubmissionDetailPage() {
 
   const mcqQuestions = submission.test.questions?.filter((q: any) => q.type === "MCQ") || []
   const openQuestions = submission.test.questions?.filter((q: any) => q.type === "OPEN") || []
-  const percentage = mcqQuestions.length > 0 ? Math.round((submission.score / mcqQuestions.length) * 100) : 0
+  const totalMCQ = mcqQuestions.length
+  const totalQuestions = submission.test.questions?.reduce((acc: number, q: any) => {
+    if (q.type === "VOCABULARY") {
+      return acc + (q.vocabularyItems ? (q.vocabularyItems as any[]).length : 0)
+    }
+    return acc + 1
+  }, 0) || 0
+  const percentage = totalQuestions > 0 ? Math.round((submission.score / totalQuestions) * 100) : 0
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -99,7 +106,7 @@ export default function SubmissionDetailPage() {
           </div>
 
           <div className="flex flex-col justify-center items-center md:border-x border-white/5 space-y-1 py-4">
-             <div className="text-4xl font-black font-outfit text-primary">{submission.score} <span className="text-lg text-slate-700">/ {mcqQuestions.length}</span></div>
+             <div className="text-4xl font-black font-outfit text-primary">{submission.score.toFixed(1)} <span className="text-lg text-slate-700">/ {totalQuestions}</span></div>
              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">To'g'ri javoblar</p>
           </div>
 
@@ -136,7 +143,7 @@ export default function SubmissionDetailPage() {
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                         <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">{q.type === 'MCQ' ? 'Variantli' : 'Ochiq savol'}</span>
+                         <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">{q.type === 'MCQ' ? 'Variantli' : q.type === 'OPEN' ? 'Ochiq savol' : 'Vocabulary'}</span>
                          {q.type === 'MCQ' && (
                            isCorrect ? 
                            <span className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.2em]">To'g'ri</span> :
@@ -193,14 +200,62 @@ export default function SubmissionDetailPage() {
                           )
                         })}
                       </div>
-                    ) : (
-                       <div className="space-y-3">
-                          <label className="text-[9px] font-black uppercase tracking-widest text-primary block">Berilgan javob:</label>
-                          <div className="p-4 bg-white/5 rounded-lg border border-white/5 text-base leading-relaxed text-slate-300">
-                            {userAnswer || <span className="text-slate-600 italic">Javob berilmagan</span>}
-                          </div>
-                       </div>
-                    )}
+                     ) : q.type === "OPEN" ? (
+                        <div className="space-y-3">
+                           <div className="flex items-center justify-between">
+                             <label className="text-[9px] font-black uppercase tracking-widest text-primary block">Berilgan javob:</label>
+                             {answerObj?.aiScore !== undefined && answerObj?.aiScore !== null && (
+                               <span className={`px-2 py-1 rounded text-[10px] font-black ${answerObj.aiScore >= 0.5 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                 AI: {(answerObj.aiScore * 100).toFixed(0)}%
+                               </span>
+                             )}
+                           </div>
+                           <div className="p-4 bg-white/5 rounded-lg border border-white/5 text-base leading-relaxed text-slate-300">
+                             {userAnswer || <span className="text-slate-600 italic">Javob berilmagan</span>}
+                           </div>
+                           {answerObj?.aiFeedback && (
+                             <div className="p-3 bg-indigo-500/5 rounded-lg border border-indigo-500/10 text-xs text-slate-400">
+                               <span className="text-indigo-400 font-bold text-[9px] uppercase tracking-widest">AI fikr: </span>
+                               {answerObj.aiFeedback}
+                             </div>
+                           )}
+                         </div>
+                       ) : null}
+
+                      {q.type === "VOCABULARY" && (
+                        <div className="overflow-hidden rounded-lg border border-white/5">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-slate-950">
+                                <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5">So'z</th>
+                                <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5">Talaba javobi</th>
+                                <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5">Holat</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(answerObj?.vocabularyResults || (q.vocabularyItems || []).map((item: any) => {
+                                const vocabAns = Array.isArray(userAnswer) ? userAnswer : []
+                                const matched = vocabAns.find((v: any) => v.word === item.word)
+                                return { word: item.word, translation: item.translation, answer: matched?.answer || "", isCorrect: null }
+                              })).map((vr: any, vIdx: number) => (
+                                <tr key={vIdx} className="border-b border-white/5 last:border-0">
+                                  <td className="px-4 py-2.5 text-sm font-medium text-white">{vr.word}</td>
+                                  <td className="px-4 py-2.5 text-sm text-slate-400">{vr.answer || <span className="text-slate-600 italic">-</span>}</td>
+                                  <td className="px-4 py-2.5">
+                                    {vr.isCorrect === true ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-500 uppercase tracking-widest"><CheckCircle2 className="w-3 h-3" /> To'g'ri</span>
+                                    ) : vr.isCorrect === false ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-rose-500 uppercase tracking-widest"><XCircle className="w-3 h-3" /> Xato</span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-600">-</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                   </div>
                 </motion.div>
               )

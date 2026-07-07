@@ -40,6 +40,7 @@ export default function ViewTestPage({ params }: { params: Promise<{ id: string 
 
   const mcqQuestions = test.questions.filter((q: any) => q.type === "MCQ")
   const openQuestions = test.questions.filter((q: any) => q.type === "OPEN")
+  const vocabQuestions = test.questions.filter((q: any) => q.type === "VOCABULARY")
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -89,6 +90,15 @@ export default function ViewTestPage({ params }: { params: Promise<{ id: string 
               <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Ochiq Savollar</div>
             </div>
           </div>
+          <div className="bg-slate-900/40 p-6 rounded-lg border border-white/5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
+              <BookOpen className="w-6 h-6 text-purple-400" />
+            </div>
+            <div>
+              <div className="text-2xl font-black font-outfit">{vocabQuestions.length}</div>
+              <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Vocabulary</div>
+            </div>
+          </div>
         </div>
 
         {/* Questions List */}
@@ -111,8 +121,8 @@ export default function ViewTestPage({ params }: { params: Promise<{ id: string 
                     <div className="space-y-2">
                        <p className="text-lg font-bold leading-relaxed">{q.text}</p>
                        <span className="inline-block px-2 py-0.5 bg-white/5 text-slate-500 text-[9px] font-black uppercase tracking-widest rounded border border-white/5">
-                        {q.type === "MCQ" ? "Variantli Savol" : "Ochiq Savol"}
-                       </span>
+                         {q.type === "MCQ" ? "Variantli Savol" : q.type === "OPEN" ? "Ochiq Savol" : "Vocabulary"}
+                        </span>
                     </div>
                   </div>
                 </div>
@@ -156,6 +166,30 @@ export default function ViewTestPage({ params }: { params: Promise<{ id: string 
                 {q.type === "OPEN" && (
                   <div className="p-4 bg-slate-950/50 rounded-lg border border-indigo-500/10 mt-4 italic text-slate-500 text-sm">
                     Ushbu savolga foydalanuvchi matn shaklida javob qoldiradi.
+                  </div>
+                )}
+
+                {q.type === "VOCABULARY" && (
+                  <div className="mt-4 overflow-hidden rounded-lg border border-white/5">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-950">
+                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5 w-1/2">So'z</th>
+                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5 w-1/2">Tarjima</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(q.vocabularyItems || []).map((item: any, vIdx: number) => (
+                          <tr key={vIdx} className="border-b border-white/5 last:border-0">
+                            <td className="px-4 py-3 text-sm font-bold text-white">{item.word || "-"}</td>
+                            <td className="px-4 py-3 text-sm text-slate-300">{item.translation || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {(!q.vocabularyItems || q.vocabularyItems.length === 0) && (
+                      <p className="p-4 text-sm text-slate-600 italic">So'zlar ro'yxati bo'sh</p>
+                    )}
                   </div>
                 )}
               </div>

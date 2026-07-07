@@ -80,6 +80,7 @@ export async function PUT(
           images: q.images || [],
           options: q.options,
           correctAnswer: q.correctAnswer,
+          vocabularyItems: q.vocabularyItems || [],
           audio: q.audio || null,
           order: orderIndex
         }
@@ -95,6 +96,7 @@ export async function PUT(
           images: q.images || [],
           options: q.options,
           correctAnswer: q.correctAnswer,
+          vocabularyItems: q.vocabularyItems || [],
           audio: q.audio || null,
           order: allQuestionIds.length + i,
           testId: id

@@ -1,4 +1,7 @@
-№,Savol Matni,Turi (MCQ/OPEN),Variant A,Variant B,Variant C,Variant D,To'gri Javob (A/B/C/D)
-1,Dunyodagi eng baland tog' qaysi?,MCQ,Everest,K2,Monblan,Kazbek,A
-2,Fotosintez jarayonida nima ajralib chiqadi?,OPEN,,,,,,Kislorod
-3,2+2 nechaga teng?,MCQ,3,4,5,6,B
+№,Savol Matni,Turi (MCQ/OPEN/VOCABULARY),Variant A,Variant B,Variant C,Variant D,To'g'ri Javob,So'z,Tarjima
+1,Dunyodagi eng baland tog' qaysi?,MCQ,Everest,K2,Monblan,Kazbek,A,
+2,Fotosintez jarayonida nima ajralib chiqadi?,OPEN,,,,,,Kislorod,,
+3,So'zlarni tarjima qiling,VOCABULARY,,,,,,,water,suv
+,,,,,,,,girl,qiz bola
+,,,,,,,,book,kitob
+4,2+2 nechaga teng?,MCQ,3,4,5,6,B,,

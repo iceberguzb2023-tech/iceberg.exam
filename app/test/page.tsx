@@ -37,6 +37,8 @@ function TestContent() {
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null)
   const [audioPlayCount, setAudioPlayCount] = useState<Record<string, number>>({})
+  const [showFinishModal, setShowFinishModal] = useState(false)
+  const [finishModalStep, setFinishModalStep] = useState(0)
   
   const MAX_TAB_SWITCHES = 3
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -194,6 +196,29 @@ function TestContent() {
         newAnswers[existing] = { questionId: currentQuestion.id, answer: text, isCorrect: null }
       } else {
         newAnswers.push({ questionId: currentQuestion.id, answer: text, isCorrect: null })
+      }
+      return newAnswers
+    })
+  }
+
+  const handleVocabularyAnswer = (word: string, value: string) => {
+    setAnswers(prev => {
+      const newAnswers = [...prev]
+      const currentQuestion = test.questions[currentIdx]
+      const existing = newAnswers.findIndex(a => a.questionId === currentQuestion.id)
+      const existingVocab = existing > -1 ? (typeof newAnswers[existing].answer === "string" ? JSON.parse(newAnswers[existing].answer) : newAnswers[existing].answer || []) : []
+      const updatedVocab = [...existingVocab]
+      const wordIdx = updatedVocab.findIndex((v: any) => v.word === word)
+      if (wordIdx > -1) {
+        updatedVocab[wordIdx] = { word, answer: value }
+      } else {
+        updatedVocab.push({ word, answer: value })
+      }
+      const answerPayload = { questionId: currentQuestion.id, answer: updatedVocab, isCorrect: null }
+      if (existing > -1) {
+        newAnswers[existing] = answerPayload
+      } else {
+        newAnswers.push(answerPayload)
       }
       return newAnswers
     })
@@ -597,7 +622,7 @@ function TestContent() {
                         </button>
                       ))}
                     </div>
-                  ) : (
+                  ) : currentQuestion.type === "OPEN" ? (
                     <div className="space-y-4">
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Javobingiz:</span>
                       <textarea 
@@ -607,14 +632,50 @@ function TestContent() {
                         className="w-full h-48 bg-slate-950 border border-white/5 rounded-2xl p-6 focus:border-primary outline-none text-lg resize-none transition-all placeholder:text-slate-800"
                       />
                     </div>
-                  )}
+                  ) : currentQuestion.type === "VOCABULARY" ? (
+                    <div className="space-y-4">
+                      <div className="overflow-hidden rounded-xl border border-white/5">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="bg-slate-950">
+                              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5 w-1/2">So'z</th>
+                              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-white/5 w-1/2">Javobingiz</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(currentQuestion.vocabularyItems || []).map((item: any, vIdx: number) => {
+                              const vocabAns = typeof userAnswer === "string" ? [] : (Array.isArray(userAnswer) ? userAnswer : [])
+                              const itemAnswer = vocabAns.find((v: any) => v.word === item.word)?.answer || ""
+                              return (
+                                <tr key={vIdx} className="border-b border-white/5 last:border-0">
+                                  <td className="px-4 py-3 text-sm font-bold text-white">{item.word}</td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      type="text"
+                                      value={itemAnswer}
+                                      onChange={(e) => handleVocabularyAnswer(item.word, e.target.value)}
+                                      placeholder="Tarjimani yozing..."
+                                      className="w-full bg-slate-950 border border-white/5 rounded-lg py-2 px-4 text-sm outline-none focus:border-primary transition-all placeholder:text-slate-800"
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {(!currentQuestion.vocabularyItems || currentQuestion.vocabularyItems.length === 0) && (
+                        <p className="text-sm text-slate-600 italic p-4 bg-slate-950/50 rounded-lg border border-white/5">Bu savolda so'zlar mavjud emas</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </motion.div>
 
               {/* Navigation */}
               <div className="flex justify-between items-center bg-slate-900/50 p-4 md:p-6 rounded-2xl border border-white/5">
                 <button 
-                  onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
+                  onClick={() => { setCurrentIdx(prev => Math.max(0, prev - 1)); setShowFinishModal(false); }}
                   disabled={currentIdx === 0}
                   className="flex items-center gap-2 px-3 md:px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:text-white disabled:opacity-10 disabled:pointer-events-none transition-all"
                 >
@@ -624,7 +685,7 @@ function TestContent() {
                 <div className="flex items-center gap-2 md:gap-4">
                   {currentIdx === test.questions.length - 1 ? (
                     <button 
-                      onClick={performSubmission}
+                      onClick={() => { setShowFinishModal(true); setFinishModalStep(0); }}
                       disabled={isSubmitting}
                       className="btn-premium px-6 md:px-12 py-4 font-black uppercase text-xs tracking-[0.2em] shadow-2xl rounded-xl"
                     >
@@ -632,7 +693,7 @@ function TestContent() {
                     </button>
                   ) : (
                     <button 
-                      onClick={() => setCurrentIdx(prev => Math.min(test.questions.length - 1, prev + 1))}
+                      onClick={() => { setCurrentIdx(prev => Math.min(test.questions.length - 1, prev + 1)); setShowFinishModal(false); }}
                       className="flex items-center gap-2 px-5 md:px-10 py-4 bg-indigo-600 text-white rounded-xl font-black uppercase text-xs tracking-[0.2em] hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20"
                     >
                       Keyingisi <ChevronRight className="w-4 h-4" />
@@ -654,7 +715,7 @@ function TestContent() {
                       {test.questions.map((_: any, i: number) => (
                         <button
                           key={i}
-                          onClick={() => setCurrentIdx(i)}
+                          onClick={() => { setCurrentIdx(i); setShowFinishModal(false); }}
                           className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-black border transition-all ${
                             currentIdx === i ? 'bg-primary border-primary text-white shadow-xl shadow-primary/30' :
                             answers.some(a => a.questionId === test.questions[i].id) ? 'bg-primary/20 border-primary/30 text-primary' :
@@ -704,6 +765,93 @@ function TestContent() {
         variant="danger"
         confirmText="Ha, chiqaman"
       />
+
+      {/* 3-step finish modal */}
+      <AnimatePresence>
+        {showFinishModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9998]"
+            />
+
+            <div className="fixed inset-0 flex items-center justify-center p-4 z-[9999] pointer-events-none">
+              <motion.div
+                key={finishModalStep}
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="w-full max-w-md bg-slate-900/90 border border-white/10 rounded-3xl p-8 shadow-2xl backdrop-blur-xl pointer-events-auto"
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 ${
+                    finishModalStep === 0 ? 'bg-amber-500/10 text-amber-500' :
+                    finishModalStep === 1 ? 'bg-orange-500/10 text-orange-500' :
+                    'bg-rose-500/10 text-rose-500'
+                  }`}>
+                    <AlertTriangle className="w-8 h-8" />
+                  </div>
+
+                  <h3 className="text-xl font-black font-outfit text-white mb-2">
+                    {finishModalStep === 0 ? "Testni yakunlash" :
+                     finishModalStep === 1 ? "Ishonchingiz komilmi?" :
+                     "Oxirgi ogohlantirish!"}
+                  </h3>
+
+                  <p className="text-slate-400 text-sm font-medium leading-relaxed mb-8">
+                    {finishModalStep === 0 ? "Haqiqatan ham testni yakunlamoqchimisiz? Javoblaringiz saqlanadi va qayta topshirish imkoni bo'lmaydi." :
+                     finishModalStep === 1 ? "Bu oxirgi bosqich emas. Agar ishonchingiz komil bo'lsa, davom eting." :
+                     "So'nggi bosqich! 'Yakunlash' tugmasini bosish bilan test yakunlanadi."}
+                  </p>
+
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <div className={`w-2.5 h-2.5 rounded-full ${finishModalStep >= 0 ? 'bg-amber-500' : 'bg-slate-700'}`} />
+                    <div className={`w-2.5 h-2.5 rounded-full ${finishModalStep >= 1 ? 'bg-orange-500' : 'bg-slate-700'}`} />
+                    <div className={`w-2.5 h-2.5 rounded-full ${finishModalStep >= 2 ? 'bg-rose-500' : 'bg-slate-700'}`} />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full">
+                    {finishModalStep > 0 && (
+                      <button
+                        onClick={() => setFinishModalStep(prev => prev - 1)}
+                        className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                      >
+                        Orqaga
+                      </button>
+                    )}
+                    {finishModalStep < 2 ? (
+                      <button
+                        onClick={() => setFinishModalStep(prev => prev + 1)}
+                        className="flex-1 px-6 py-4 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all bg-primary hover:bg-primary/90 text-white shadow-lg"
+                      >
+                        Davom etish
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setShowFinishModal(false); performSubmission(); }}
+                        disabled={isSubmitting}
+                        className="flex-1 px-6 py-4 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center gap-2"
+                      >
+                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Yakunlash"}
+                      </button>
+                    )}
+                    {finishModalStep === 0 && (
+                      <button
+                        onClick={() => setShowFinishModal(false)}
+                        className="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                      >
+                        Bekor qilish
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

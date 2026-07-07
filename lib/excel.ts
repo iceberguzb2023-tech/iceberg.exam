@@ -36,8 +36,10 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
     { header: 'Savol #', key: 'qNum', width: 10 },
     { header: 'Savol Matni', key: 'qText', width: 60 },
     { header: 'O\'quvchi Javobi', key: 'userAnswer', width: 40 },
-    { header: 'To\'g\'ri Javob (MCQ)', key: 'cAnswer', width: 30 },
+    { header: 'To\'g\'ri Javob', key: 'cAnswer', width: 30 },
     { header: 'Holat', key: 'status', width: 20 },
+    { header: 'AI Ball', key: 'aiScore', width: 10 },
+    { header: 'AI Fikr', key: 'aiFeedback', width: 40 },
   ]
 
   // --- 3. Fill Data ---
@@ -55,34 +57,62 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
       role: sub.role === 'STUDENT' ? 'Talaba' : 'O\'qituvchi',
       level: sub.level,
       date: submissionDate,
-      score: `${sub.score} / ${sub.totalQuestions}`,
+      score: `${Number(sub.score).toFixed(1)} / ${sub.totalQuestions}`,
       percentage: `${percentage}%`,
     })
 
-    // Add to Details (One row per question)
+    // Add to Details (One row per question / vocabulary item)
     if (Array.isArray(sub.answers)) {
+      let rowCounter = 0
       sub.answers.forEach((ans: any, idx: number) => {
         const question = sub.test?.questions?.find((q: any) => q.id === ans.questionId)
         const qText = ans.questionText || question?.text || `Savol [ID: ${ans.questionId?.slice(-6)}]`
-        const cAnswer = ans.correctAnswer || question?.correctAnswer || "-"
-        const userAnswer = ans.answer !== undefined && ans.answer !== null ? ans.answer : "(Javob berilmagan)"
-        const isCorrect = ans.isCorrect
-        
-        let status = ""
-        if (isCorrect === true) status = "✅ To'g'ri"
-        else if (isCorrect === false) status = "❌ Xato"
-        else status = "📝 Ochiq savol"
-        
-        detailSheet.addRow({
-          student: studentName,
-          date: submissionDate,
-          testTitle: testTitle,
-          qNum: idx + 1,
-          qText: qText,
-          userAnswer: userAnswer,
-          cAnswer: cAnswer,
-          status: status
-        })
+
+        // VOCABULARY: one row per vocabulary item
+        if (ans.vocabularyResults && Array.isArray(ans.vocabularyResults)) {
+          ans.vocabularyResults.forEach((vr: any) => {
+            rowCounter++
+            const status = vr.isCorrect === true ? "✅ To'g'ri" : vr.isCorrect === false ? "❌ Xato" : "-"
+            detailSheet.addRow({
+              student: studentName,
+              date: submissionDate,
+              testTitle: testTitle,
+              qNum: rowCounter,
+              qText: `${qText} - ${vr.word}`,
+              userAnswer: vr.answer || "(Javob berilmagan)",
+              cAnswer: vr.translation || "-",
+              status: status,
+              aiScore: "",
+              aiFeedback: "",
+            })
+          })
+        } else {
+          rowCounter++
+          const userAnswer = ans.answer !== undefined && ans.answer !== null ? ans.answer : "(Javob berilmagan)"
+          const cAnswer = ans.correctAnswer || question?.correctAnswer || "-"
+          const isCorrect = ans.isCorrect
+          const aiScore = ans.aiScore !== undefined ? ans.aiScore : ""
+          const aiFeedback = ans.aiFeedback || ""
+
+          let status = ""
+          if (isCorrect === true) status = "✅ To'g'ri"
+          else if (isCorrect === false) status = "❌ Xato"
+          else if (aiScore !== "") status = `AI: ${(aiScore * 100).toFixed(0)}%`
+          else status = "📝 Ochiq savol"
+
+          detailSheet.addRow({
+            student: studentName,
+            date: submissionDate,
+            testTitle: testTitle,
+            qNum: rowCounter,
+            qText: qText,
+            userAnswer: typeof userAnswer === 'object' ? JSON.stringify(userAnswer) : String(userAnswer),
+            cAnswer: cAnswer,
+            status: status,
+            aiScore: aiScore !== "" ? aiScore.toFixed(2) : "",
+            aiFeedback: aiFeedback,
+          })
+        }
       })
     }
   })
@@ -103,7 +133,7 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
       if (rowNumber > 1) {
         row.eachCell((cell, colNumber) => {
           // Align large text to left, others to center
-          const isTextColumn = sheet === detailSheet && (colNumber === 5 || colNumber === 6)
+          const isTextColumn = sheet === detailSheet && (colNumber === 5 || colNumber === 6 || colNumber === 10)
           cell.alignment = { 
             vertical: 'top', 
             horizontal: isTextColumn ? 'left' : 'center', 

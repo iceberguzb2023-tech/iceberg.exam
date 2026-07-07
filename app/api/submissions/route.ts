@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
+import { evaluateOpenQuestions, evaluateVocabularyAnswers } from "@/lib/ai"
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { testId, firstName, lastName, role, level, answers } = body
 
-    // Calculate score
     const test = await prisma.test.findUnique({
       where: { id: testId },
       include: { questions: { orderBy: { order: "asc" } } },
@@ -16,33 +16,121 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Test topilmadi" }, { status: 404 })
     }
 
+    const openQuestionsForAI: { q: string; modelAnswer: string; studentAnswer: string; questionId: string; originalIdx: number }[] = []
+    const vocabForAI: { word: string; studentAnswer: string; qIdx: number; itemIdx: number }[] = []
     let score = 0
-    let mcqCount = 0
-    const processedAnswers = test.questions.map((q) => {
+    let totalQuestions = 0
+    const processedAnswers: any[] = []
+
+    test.questions.forEach((q) => {
       const userAnswer = answers.find((a: any) => a.questionId === q.id)?.answer
-      
+
       if (q.type === "MCQ") {
-        mcqCount++
         const isCorrect = userAnswer === q.correctAnswer
         if (isCorrect) score++
-        return {
+        totalQuestions++
+        processedAnswers.push({
           questionId: q.id,
           questionText: q.text,
           correctAnswer: q.correctAnswer,
           answer: userAnswer,
           isCorrect,
-        }
-      } else {
-        // OPEN questions are not checked and don't affect the score
-        return {
+        })
+      } else if (q.type === "OPEN") {
+        totalQuestions++
+        processedAnswers.push({
+          questionId: q.id,
+          questionText: q.text,
+          correctAnswer: q.correctAnswer,
+          answer: userAnswer || "",
+          isCorrect: null,
+          aiScore: 0,
+          aiFeedback: "",
+        })
+        openQuestionsForAI.push({
+          q: q.text,
+          modelAnswer: q.correctAnswer || "",
+          studentAnswer: userAnswer || "",
+          questionId: q.id,
+          originalIdx: processedAnswers.length - 1,
+        })
+      } else if (q.type === "VOCABULARY") {
+        const items: { word: string; translation: string }[] = (q.vocabularyItems as any) || []
+        const userVocabAnswers: { word: string; answer: string }[] = userAnswer
+          ? (typeof userAnswer === "string" ? JSON.parse(userAnswer) : userAnswer)
+          : []
+
+        const qIdx = processedAnswers.length
+        const vocabResults = items.map((item, itemIdx) => {
+          const matched = userVocabAnswers.find((ua) => ua.word === item.word)
+          const studentAns = matched?.answer || ""
+          totalQuestions++
+
+          vocabForAI.push({
+            word: item.word,
+            studentAnswer: studentAns,
+            qIdx,
+            itemIdx,
+          })
+
+          return {
+            word: item.word,
+            translation: item.translation || "",
+            answer: studentAns,
+            isCorrect: false,
+            feedback: "",
+          }
+        })
+
+        processedAnswers.push({
           questionId: q.id,
           questionText: q.text,
           correctAnswer: null,
-          answer: userAnswer,
+          answer: userVocabAnswers,
           isCorrect: null,
-        }
+          vocabularyResults: vocabResults,
+        })
       }
     })
+
+    // Batch AI grading for OPEN questions
+    if (openQuestionsForAI.length > 0) {
+      const aiResults = await evaluateOpenQuestions(
+        openQuestionsForAI.map((oq) => ({
+          q: oq.q,
+          modelAnswer: oq.modelAnswer,
+          studentAnswer: oq.studentAnswer,
+        }))
+      )
+
+      aiResults.forEach((result, idx) => {
+        const oq = openQuestionsForAI[idx]
+        const ans = processedAnswers[oq.originalIdx]
+        ans.aiScore = result.score
+        ans.aiFeedback = result.feedback
+        score += result.score
+      })
+    }
+
+    // Batch AI grading for VOCABULARY
+    if (vocabForAI.length > 0) {
+      const aiVocabResults = await evaluateVocabularyAnswers(
+        vocabForAI.map((v) => ({
+          word: v.word,
+          studentAnswer: v.studentAnswer,
+        }))
+      )
+
+      aiVocabResults.forEach((result, idx) => {
+        const v = vocabForAI[idx]
+        const ans = processedAnswers[v.qIdx]
+        if (ans.vocabularyResults && ans.vocabularyResults[v.itemIdx]) {
+          ans.vocabularyResults[v.itemIdx].isCorrect = result.isCorrect
+          ans.vocabularyResults[v.itemIdx].feedback = result.feedback
+          if (result.isCorrect) score++
+        }
+      })
+    }
 
     const submission = await prisma.submission.create({
       data: {
@@ -53,7 +141,7 @@ export async function POST(req: NextRequest) {
         level,
         answers: processedAnswers,
         score,
-        totalQuestions: mcqCount,
+        totalQuestions,
       },
     })
 

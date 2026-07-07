@@ -24,7 +24,7 @@ export default function AdminTestsPage() {
     try {
       const res = await fetch("/api/admin/tests")
       const data = await res.json()
-      setTests(data)
+      setTests(Array.isArray(data) ? data : [])
     } catch (err) {
       toast.error("Testlarni yuklashda xatolik yuz berdi")
     } finally {

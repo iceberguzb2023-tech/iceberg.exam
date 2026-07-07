@@ -34,10 +34,11 @@ export async function POST(req: NextRequest) {
         questions: {
           create: questions.map((q: any, i: number) => ({
             text: q.text,
-            type: q.type as "MCQ" | "OPEN",
+            type: q.type as "MCQ" | "OPEN" | "VOCABULARY",
             images: q.images || [],
             options: q.options,
             correctAnswer: q.correctAnswer,
+            vocabularyItems: q.vocabularyItems || [],
             audio: q.audio || null,
             order: i,
           })),

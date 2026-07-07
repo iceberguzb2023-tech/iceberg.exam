@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Clock, FileUp, Music, Volume2 } from "lucide-react"
+import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Clock, FileUp, Music, Volume2, BookOpen } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
@@ -27,7 +27,7 @@ export default function NewTestPage() {
     level: "1-etap",
     timeLimit: 30,
     questions: [
-      { text: "", type: "MCQ", images: [] as string[], options: ["", "", "", ""], correctAnswer: "A", audio: null as string | null }
+      { text: "", type: "MCQ", images: [] as string[], options: ["", "", "", ""], correctAnswer: "A", audio: null as string | null, vocabularyItems: [] as { word: string; translation: string }[] }
     ]
   })
 
@@ -40,14 +40,14 @@ export default function NewTestPage() {
 
   const addQuestionAt = (idx: number) => {
     const newQuestions = [...newTest.questions]
-    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null })
+    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null, vocabularyItems: [] })
     setNewTest({ ...newTest, questions: newQuestions })
   }
 
   const addQuestionFirst = () => {
     setNewTest({
       ...newTest,
-      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null }, ...newTest.questions]
+      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null, vocabularyItems: [] }, ...newTest.questions]
     })
   }
 
@@ -140,40 +140,101 @@ export default function NewTestPage() {
       try {
         const bstream = evt.target?.result
         const wb = XLSX.read(bstream, { type: 'binary' })
-        const wsname = wb.SheetNames[0]
-        const ws = wb.Sheets[wsname]
-        const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 })
+        const isNewFormat = wb.SheetNames.length > 1
 
-        // Skip header row
-        const rows = data.slice(1)
-        const importedQuestions = rows
-          .filter(row => row[1]) // Filter out empty rows (check Question Text)
-          .map(row => {
-            const type = String(row[2] || "MCQ").toUpperCase() === "OPEN" ? "OPEN" : "MCQ"
+        // --- Sheet 1: MCQ + OPEN ---
+        const ws1 = wb.Sheets[wb.SheetNames[0]]
+        const data1: any[][] = XLSX.utils.sheet_to_json(ws1, { header: 1 })
+        const rows1 = data1.slice(1)
+
+        const importedQuestions: any[] = []
+        let vocabGroup: any = null
+
+        rows1.forEach(row => {
+          const text = String(row[1] || "").trim()
+          const rawType = String(row[2] || "").toUpperCase().trim()
+
+          if (text && rawType === "VOCABULARY") {
+            if (!isNewFormat) {
+              vocabGroup = {
+                text,
+                type: "VOCABULARY",
+                options: ["", "", "", ""],
+                correctAnswer: "",
+                vocabularyItems: [] as { word: string; translation: string }[],
+                images: [],
+                audio: null,
+              }
+              const word = String(row[8] || "").trim()
+              const translation = String(row[9] || "").trim()
+              if (word || translation) {
+                vocabGroup.vocabularyItems.push({ word, translation })
+              }
+              importedQuestions.push(vocabGroup)
+            } else {
+              vocabGroup = null
+            }
+          } else if (vocabGroup && !text && !rawType) {
+            if (!isNewFormat) {
+              const word = String(row[8] || "").trim()
+              const translation = String(row[9] || "").trim()
+              if (word || translation) {
+                vocabGroup.vocabularyItems.push({ word, translation })
+              }
+            }
+          } else if (text) {
+            vocabGroup = null
+            const type = rawType === "OPEN" ? "OPEN" : "MCQ"
             const options = [
               String(row[3] || ""),
               String(row[4] || ""),
               String(row[5] || ""),
-              String(row[6] || "")
+              String(row[6] || ""),
             ]
             let correctAnswer = String(row[7] || "A").trim().toUpperCase()
-            
-            // If OPEN type, the correct answer is the whole string
             if (type === "OPEN") {
               correctAnswer = String(row[7] || "")
             } else if (!["A", "B", "C", "D"].includes(correctAnswer)) {
-              correctAnswer = "A" // Fallback for MCQ
+              correctAnswer = "A"
             }
-
-            return {
-              text: String(row[1] || ""),
+            importedQuestions.push({
+              text,
               type,
               options,
               correctAnswer,
+              vocabularyItems: [],
               images: [],
-              audio: null
+              audio: null,
+            })
+          }
+        })
+
+        // --- Sheet 2: Vocabulary (new format) ---
+        if (isNewFormat) {
+          const ws2 = wb.Sheets[wb.SheetNames[1]]
+          const data2: any[][] = XLSX.utils.sheet_to_json(ws2, { header: 1 })
+          const rows2 = data2.slice(1)
+
+          const vocabItems: { word: string; translation: string }[] = []
+          rows2.forEach(row => {
+            const word = String(row[0] || "").trim()
+            if (word) {
+              vocabItems.push({ word, translation: "" })
             }
           })
+
+          if (vocabItems.length > 0) {
+            importedQuestions.push({
+              text: "So'zlarni tarjima qiling",
+              type: "VOCABULARY",
+              options: ["", "", "", ""],
+              correctAnswer: "",
+              vocabularyItems: vocabItems,
+              images: [],
+              audio: null,
+            })
+          }
+        }
 
         if (importedQuestions.length === 0) {
           toast.error("Faylda savollar topilmadi!")
@@ -193,6 +254,48 @@ export default function NewTestPage() {
       }
     }
     reader.readAsBinaryString(file)
+  }
+
+  const handleDownloadTemplate = () => {
+    const wb = XLSX.utils.book_new()
+
+    // Sheet 1: Savollar (MCQ + OPEN)
+    const headers1 = ["№", "Savol Matni", "Turi (MCQ/OPEN)", "Variant A", "Variant B", "Variant C", "Variant D", "To'g'ri Javob"]
+    const exampleRows1 = [
+      [1, "Dunyodagi eng baland tog' qaysi?", "MCQ", "Everest", "K2", "Monblan", "Kazbek", "A"],
+      [2, "Fotosintez jarayonida nima ajralib chiqadi?", "OPEN", "", "", "", "", "Kislorod"],
+      [3, "2+2 nechaga teng?", "MCQ", "3", "4", "5", "6", "B"],
+    ]
+    const ws1 = XLSX.utils.aoa_to_sheet([headers1, ...exampleRows1])
+    ws1["!cols"] = [
+      { wch: 5 },   // №
+      { wch: 40 },  // Savol Matni
+      { wch: 16 },  // Turi
+      { wch: 16 },  // Variant A
+      { wch: 16 },  // Variant B
+      { wch: 16 },  // Variant C
+      { wch: 16 },  // Variant D
+      { wch: 18 },  // To'g'ri Javob
+    ]
+    XLSX.utils.book_append_sheet(wb, ws1, "Savollar")
+
+    // Sheet 2: Vocabulary
+    const headers2 = ["So'z"]
+    const exampleRows2 = [
+      ["water"],
+      ["qiz bola"],
+      ["book"],
+      ["tog'"],
+      ["river"],
+    ]
+    const ws2 = XLSX.utils.aoa_to_sheet([headers2, ...exampleRows2])
+    ws2["!cols"] = [
+      { wch: 30 },  // So'z
+    ]
+    XLSX.utils.book_append_sheet(wb, ws2, "Vocabulary")
+
+    XLSX.writeFile(wb, "ICE_test_shabloni.xlsx")
+    toast.success("Shablon yuklandi")
   }
 
   const handleCreateTest = async () => {
@@ -339,6 +442,13 @@ export default function NewTestPage() {
                 className="hidden" 
               />
               <button 
+                onClick={handleDownloadTemplate}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all"
+              >
+                <FileUp className="w-3.5 h-3.5" />
+                Shablon yuklash
+              </button>
+              <button 
                 onClick={() => fileInputRef.current?.click()}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/20 transition-all"
               >
@@ -382,13 +492,13 @@ export default function NewTestPage() {
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Savol turi:</span>
                             <div className="flex bg-slate-900 p-1 rounded-lg">
-                              {["MCQ", "OPEN"].map(type => (
+                              {["MCQ", "OPEN", "VOCABULARY"].map(type => (
                                 <button 
                                   key={type}
-                                  onClick={() => updateQuestion(qIdx, { type })}
+                                  onClick={() => updateQuestion(qIdx, { type, vocabularyItems: type === "VOCABULARY" ? (q.vocabularyItems && q.vocabularyItems.length > 0 ? q.vocabularyItems : [{ word: "", translation: "" }]) : [] })}
                                   className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${q.type === type ? "bg-primary text-white" : "text-slate-500 hover:text-white"}`}
                                 >
-                                  {type === "MCQ" ? "Variantli" : "Ochiq"}
+                                  {type === "MCQ" ? "Variantli" : type === "OPEN" ? "Ochiq" : "Vocabulary"}
                                 </button>
                               ))}
                             </div>
@@ -476,6 +586,66 @@ export default function NewTestPage() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {q.type === "VOCABULARY" && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] flex items-center gap-2">
+                            <BookOpen className="w-3.5 h-3.5" /> So'zlar ro'yxati
+                          </label>
+                          <span className="text-[10px] text-slate-500 font-bold">{(q.vocabularyItems || []).length} ta so'z</span>
+                        </div>
+                        <div className="space-y-2">
+                          {(q.vocabularyItems || []).map((item: any, vIdx: number) => (
+                            <div key={vIdx} className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-white/5">
+                              <div className="w-8 h-8 bg-indigo-500/10 rounded-md flex items-center justify-center text-xs font-black text-indigo-400 border border-indigo-500/20 flex-shrink-0">
+                                {vIdx + 1}
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="So'z (inglizcha)"
+                                value={item.word || ""}
+                                onChange={(e) => {
+                                  const items = [...(q.vocabularyItems || [])]
+                                  items[vIdx] = { ...items[vIdx], word: e.target.value }
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="flex-1 bg-slate-900 border border-white/5 rounded-lg py-2 px-4 text-sm outline-none focus:border-primary transition-all"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Tarjima (o'zbekcha)"
+                                value={item.translation || ""}
+                                onChange={(e) => {
+                                  const items = [...(q.vocabularyItems || [])]
+                                  items[vIdx] = { ...items[vIdx], translation: e.target.value }
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="flex-1 bg-slate-900 border border-white/5 rounded-lg py-2 px-4 text-sm outline-none focus:border-primary transition-all"
+                              />
+                              <button
+                                onClick={() => {
+                                  const items = (q.vocabularyItems || []).filter((_: any, i: number) => i !== vIdx)
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all flex-shrink-0"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const items = [...(q.vocabularyItems || []), { word: "", translation: "" }]
+                            updateQuestion(qIdx, { vocabularyItems: items })
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/20 transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Yangi so'z qo'shish
+                        </button>
                       </div>
                     )}
                   </div>

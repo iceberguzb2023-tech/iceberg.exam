@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Save, Clock, Music, Volume2 } from "lucide-react"
+import { Plus, Trash2, Image as ImageIcon, CheckCircle2, ChevronLeft, Loader2, Save, Clock, Music, Volume2, BookOpen } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
@@ -62,14 +62,14 @@ export default function EditTestPage({ params }: { params: Promise<{ id: string 
 
   const addQuestionAt = (idx: number) => {
     const newQuestions = [...test.questions]
-    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null })
+    newQuestions.splice(idx + 1, 0, { text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null, vocabularyItems: [] })
     setTest({ ...test, questions: newQuestions })
   }
 
   const addQuestionFirst = () => {
     setTest({
       ...test,
-      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null }, ...test.questions]
+      questions: [{ text: "", type: "MCQ", images: [], options: ["", "", "", ""], correctAnswer: "A", audio: null, vocabularyItems: [] }, ...test.questions]
     })
   }
 
@@ -331,13 +331,13 @@ export default function EditTestPage({ params }: { params: Promise<{ id: string 
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Savol turi:</span>
                             <div className="flex bg-slate-900 p-1 rounded-lg">
-                              {["MCQ", "OPEN"].map(type => (
+                              {["MCQ", "OPEN", "VOCABULARY"].map(type => (
                                 <button 
                                   key={type}
-                                  onClick={() => updateQuestion(qIdx, { type })}
+                                  onClick={() => updateQuestion(qIdx, { type, vocabularyItems: type === "VOCABULARY" ? (q.vocabularyItems && q.vocabularyItems.length > 0 ? q.vocabularyItems : [{ word: "", translation: "" }]) : [] })}
                                   className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${q.type === type ? "bg-primary text-white" : "text-slate-500 hover:text-white"}`}
                                 >
-                                  {type === "MCQ" ? "Variantli" : "Ochiq"}
+                                  {type === "MCQ" ? "Variantli" : type === "OPEN" ? "Ochiq" : "Vocabulary"}
                                 </button>
                               ))}
                             </div>
@@ -425,6 +425,66 @@ export default function EditTestPage({ params }: { params: Promise<{ id: string 
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {q.type === "VOCABULARY" && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] flex items-center gap-2">
+                            <BookOpen className="w-3.5 h-3.5" /> So'zlar ro'yxati
+                          </label>
+                          <span className="text-[10px] text-slate-500 font-bold">{(q.vocabularyItems || []).length} ta so'z</span>
+                        </div>
+                        <div className="space-y-2">
+                          {(q.vocabularyItems || []).map((item: any, vIdx: number) => (
+                            <div key={vIdx} className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-white/5">
+                              <div className="w-8 h-8 bg-indigo-500/10 rounded-md flex items-center justify-center text-xs font-black text-indigo-400 border border-indigo-500/20 flex-shrink-0">
+                                {vIdx + 1}
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="So'z (inglizcha)"
+                                value={item.word || ""}
+                                onChange={(e) => {
+                                  const items = [...(q.vocabularyItems || [])]
+                                  items[vIdx] = { ...items[vIdx], word: e.target.value }
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="flex-1 bg-slate-900 border border-white/5 rounded-lg py-2 px-4 text-sm outline-none focus:border-primary transition-all"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Tarjima (o'zbekcha)"
+                                value={item.translation || ""}
+                                onChange={(e) => {
+                                  const items = [...(q.vocabularyItems || [])]
+                                  items[vIdx] = { ...items[vIdx], translation: e.target.value }
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="flex-1 bg-slate-900 border border-white/5 rounded-lg py-2 px-4 text-sm outline-none focus:border-primary transition-all"
+                              />
+                              <button
+                                onClick={() => {
+                                  const items = (q.vocabularyItems || []).filter((_: any, i: number) => i !== vIdx)
+                                  updateQuestion(qIdx, { vocabularyItems: items })
+                                }}
+                                className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all flex-shrink-0"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const items = [...(q.vocabularyItems || []), { word: "", translation: "" }]
+                            updateQuestion(qIdx, { vocabularyItems: items })
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/20 transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Yangi so'z qo'shish
+                        </button>
                       </div>
                     )}
                   </div>
