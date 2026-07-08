@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
             translation: item.translation || "",
             answer: studentAns,
             isCorrect: false,
+            isMisspelled: false,
             feedback: "",
           }
         })
@@ -125,9 +126,12 @@ export async function POST(req: NextRequest) {
         const v = vocabForAI[idx]
         const ans = processedAnswers[v.qIdx]
         if (ans.vocabularyResults && ans.vocabularyResults[v.itemIdx]) {
-          ans.vocabularyResults[v.itemIdx].isCorrect = result.isCorrect
-          ans.vocabularyResults[v.itemIdx].feedback = result.feedback
-          if (result.isCorrect) score++
+          const item = ans.vocabularyResults[v.itemIdx]
+          item.isCorrect = result.isCorrect
+          item.isMisspelled = result.isMisspelled
+          item.feedback = result.feedback
+          if (result.isCorrect) score += 1.0
+          else if (result.isMisspelled) score += 0.5
         }
       })
     }

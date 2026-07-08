@@ -22,8 +22,8 @@ export async function evaluateOpenQuestions(
           role: "system",
           content:
             "You are a strict but fair exam grader. Grade each student answer against the model answer. " +
-            "Return a JSON array of objects with 'score' (0 to 1, float) and 'feedback' (short explanation in Uzbek). " +
-            "Accept synonyms and minor spelling mistakes if the meaning is correct. Be strict with wrong answers.",
+            "Return a JSON array of objects with 'score' (0.2 to 2.0, float) and 'feedback' (short explanation in Uzbek). " +
+            "0.2 = completely wrong, 2.0 = perfect answer. Accept synonyms and minor spelling mistakes if the meaning is correct. Be strict with wrong answers.",
         },
         {
           role: "user",
@@ -41,7 +41,7 @@ export async function evaluateOpenQuestions(
 
     if (Array.isArray(results) && results.length === questions.length) {
       return results.map((r: any) => ({
-        score: typeof r.score === "number" ? Math.max(0, Math.min(1, r.score)) : 0,
+        score: typeof r.score === "number" ? Math.max(0.2, Math.min(2.0, r.score)) : 0.2,
         feedback: r.feedback || "",
       }))
     }
@@ -62,7 +62,7 @@ function fallbackScores(count: number): { score: number; feedback: string }[] {
 
 export async function evaluateVocabularyAnswers(
   items: { word: string; studentAnswer: string }[]
-): Promise<{ isCorrect: boolean; feedback: string }[]> {
+): Promise<{ isCorrect: boolean; isMisspelled: boolean; feedback: string }[]> {
   if (!process.env.OPENAI_API_KEY) {
     console.error("OPENAI_API_KEY topilmadi")
     return fallbackVocab(items.length)
@@ -80,8 +80,11 @@ export async function evaluateVocabularyAnswers(
             "You are a vocabulary grader. For each word, the student must translate it to the opposite language. " +
             "If the word is in English → Uzbek answer expected, if the word is in Uzbek → English answer expected, " +
             "for any other language the opposite applies. Check if the student's answer is a correct translation. " +
-            "Accept synonyms and minor spelling mistakes. Return a JSON object with 'results' array where " +
-            "each item has 'isCorrect' (boolean) and 'feedback' (short explanation in Uzbek).",
+            "Accept synonyms. If the meaning is correct but spelling is wrong → isCorrect: false, isMisspelled: true. " +
+            "If completely correct → isCorrect: true, isMisspelled: false. " +
+            "If completely wrong → both false. " +
+            "Return a JSON object with 'results' array where " +
+            "each item has 'isCorrect' (boolean), 'isMisspelled' (boolean), and 'feedback' (short explanation in Uzbek).",
         },
         {
           role: "user",
@@ -100,6 +103,7 @@ export async function evaluateVocabularyAnswers(
     if (Array.isArray(results) && results.length === items.length) {
       return results.map((r: any) => ({
         isCorrect: typeof r.isCorrect === "boolean" ? r.isCorrect : false,
+        isMisspelled: typeof r.isMisspelled === "boolean" ? r.isMisspelled : false,
         feedback: r.feedback || "",
       }))
     }
@@ -111,9 +115,10 @@ export async function evaluateVocabularyAnswers(
   }
 }
 
-function fallbackVocab(count: number): { isCorrect: boolean; feedback: string }[] {
+function fallbackVocab(count: number): { isCorrect: boolean; isMisspelled: boolean; feedback: string }[] {
   return Array.from({ length: count }, () => ({
     isCorrect: false,
+    isMisspelled: false,
     feedback: "Baholashda xatolik yuz berdi",
   }))
 }
