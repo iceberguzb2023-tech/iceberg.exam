@@ -356,7 +356,7 @@ export default function ResultsPage() {
                             {percentage}%
                           </div>
                           <div className="text-[10px] text-slate-600 font-bold">
-                            {sub.score} / {sub.totalQuestions}
+                            {sub.score?.toFixed(2)} / {sub.totalQuestions}
                           </div>
                         </div>
                       </td>

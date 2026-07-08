@@ -95,7 +95,11 @@ export async function POST(req: NextRequest) {
     })
 
     // Batch AI grading for OPEN questions
+    console.log(`[Submission] OPEN savollar: ${openQuestionsForAI.length} ta, VOCAB savollar: ${vocabForAI.length} ta`)
+    console.log(`[Submission] OPENAI_API_KEY mavjud: ${!!process.env.OPENAI_API_KEY}, uzunligi: ${process.env.OPENAI_API_KEY?.length || 0}`)
+
     if (openQuestionsForAI.length > 0) {
+      const start = Date.now()
       const aiResults = await evaluateOpenQuestions(
         openQuestionsForAI.map((oq) => ({
           q: oq.q,
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest) {
           studentAnswer: oq.studentAnswer,
         }))
       )
+      console.log(`[Submission] OPEN AI natija: ${Date.now() - start}ms, natijalar: ${aiResults.length} ta`)
 
       aiResults.forEach((result, idx) => {
         const oq = openQuestionsForAI[idx]
@@ -115,12 +120,14 @@ export async function POST(req: NextRequest) {
 
     // Batch AI grading for VOCABULARY
     if (vocabForAI.length > 0) {
+      const start = Date.now()
       const aiVocabResults = await evaluateVocabularyAnswers(
         vocabForAI.map((v) => ({
           word: v.word,
           studentAnswer: v.studentAnswer,
         }))
       )
+      console.log(`[Submission] VOCAB AI natija: ${Date.now() - start}ms, natijalar: ${aiVocabResults.length} ta`)
 
       aiVocabResults.forEach((result, idx) => {
         const v = vocabForAI[idx]
@@ -135,6 +142,9 @@ export async function POST(req: NextRequest) {
         }
       })
     }
+
+    score = Math.round(score * 100) / 100
+    console.log(`[Submission] Tayyor: score=${score}, total=${totalQuestions}`)
 
     const submission = await prisma.submission.create({
       data: {
