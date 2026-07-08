@@ -31,7 +31,8 @@ export async function evaluateOpenQuestions(
           role: 'system',
           content:
             'You are a strict but fair exam grader. Grade each student answer against the model answer. ' +
-            "Return a JSON array of objects with 'score' (0.0 to 2.0, float) and 'feedback' (short explanation in Uzbek). " +
+            "Return a JSON object with a 'results' array. Each item has: 'score' (0.0 to 2.0, float), " +
+            "'feedback' (short explanation in Uzbek). " +
             '0.0 = empty answer (student wrote nothing). ' +
             '0.2 = student wrote something but it is completely wrong. ' +
             '0.3 to 2.0 = partially to fully correct. ' +
@@ -56,7 +57,15 @@ export async function evaluateOpenQuestions(
     }
 
     const parsed = JSON.parse(content);
-    const results = parsed.results || parsed.scores || parsed.grades || parsed;
+    let results = parsed.results || parsed.scores || parsed.grades || parsed;
+
+    if (!Array.isArray(results) && typeof results === 'object' && results !== null) {
+      const keys = Object.keys(results);
+      if (keys.length > 0 && keys.every(k => !isNaN(Number(k)))) {
+        results = keys.sort((a, b) => Number(a) - Number(b)).map(k => results[k]);
+        console.log(`[AI OPEN] Object→Array: ${results.length} ta`);
+      }
+    }
 
     if (Array.isArray(results)) {
       console.log(

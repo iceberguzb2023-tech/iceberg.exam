@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
-import { ChevronLeft, CheckCircle2, XCircle, User, Calendar, Award, BookOpen, MessageSquare } from "lucide-react"
+import { ChevronLeft, CheckCircle2, XCircle, AlertCircle, User, Calendar, Award, BookOpen, MessageSquare } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 
 export default function SubmissionDetailPage() {
@@ -244,6 +244,8 @@ export default function SubmissionDetailPage() {
                                       <td className="px-3 py-1.5">
                                     {vr.isCorrect === true ? (
                                       <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-500 uppercase tracking-widest"><CheckCircle2 className="w-3 h-3" /> To'g'ri</span>
+                                    ) : vr.isMisspelled === true ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-500 uppercase tracking-widest"><AlertCircle className="w-3 h-3" /> Imlo xato</span>
                                     ) : vr.isCorrect === false ? (
                                       <span className="inline-flex items-center gap-1 text-[10px] font-black text-rose-500 uppercase tracking-widest"><XCircle className="w-3 h-3" /> Xato</span>
                                     ) : (
