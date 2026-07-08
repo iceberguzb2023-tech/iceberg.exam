@@ -30,8 +30,10 @@ export async function evaluateOpenQuestions(
           content:
             "You are a strict but fair exam grader. Grade each student answer against the model answer. " +
             "Return a JSON array of objects with 'score' (0.0 to 2.0, float) and 'feedback' (short explanation in Uzbek). " +
-            "0.0 = completely wrong or empty answer, 0.2 to 2.0 = partially to fully correct. " +
-            "Accept synonyms and minor spelling mistakes if the meaning is correct. Be strict with wrong answers.",
+            "0.0 = empty answer (student wrote nothing). " +
+            "0.2 = student wrote something but it is completely wrong. " +
+            "0.3 to 2.0 = partially to fully correct. " +
+            "Accept synonyms and minor spelling mistakes if the meaning is correct.",
         },
         {
           role: "user",
@@ -95,12 +97,15 @@ export async function evaluateVocabularyAnswers(
         {
           role: "system",
           content:
-            "You are a vocabulary grader. For each word, the student must translate it to the opposite language. " +
-            "If the word is in English → Uzbek answer expected, if the word is in Uzbek → English answer expected, " +
-            "for any other language the opposite applies. Check if the student's answer is a correct translation. " +
-            "Accept synonyms. If the meaning is correct but spelling is wrong → isCorrect: false, isMisspelled: true. " +
-            "If completely correct → isCorrect: true, isMisspelled: false. " +
-            "If completely wrong → both false. " +
+            "You are a vocabulary grader. For each word, detect the language: if English → Uzbek answer expected, " +
+            "if Uzbek → English answer expected. Accept synonyms. " +
+            "Scoring: " +
+            "1) Exact correct translation → isCorrect: true, isMisspelled: false. " +
+            "2) Meaning is correct but 1-2 character errors (wrong/missing/extra letter) → isCorrect: false, isMisspelled: true. " +
+            "3) 3+ character errors or completely wrong meaning → isCorrect: false, isMisspelled: false. " +
+            "Examples: target='friendship', answer='frendship' → misspelled (1 error). " +
+            "target='friendship', answer='frendshp' → misspelled (2 errors). " +
+            "target='friendship', answer='frendshippp' → wrong (3+ errors). " +
             "Return a JSON object with 'results' array where " +
             "each item has 'isCorrect' (boolean), 'isMisspelled' (boolean), and 'feedback' (short explanation in Uzbek).",
         },
