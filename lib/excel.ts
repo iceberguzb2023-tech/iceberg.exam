@@ -1,25 +1,7 @@
 import ExcelJS from 'exceljs'
 
-function makeSheetName(sub: any, used: Set<string>): string {
-  const name = `${sub.firstName?.trim() || ''} ${sub.lastName?.trim() || ''}`.trim()
-  const test = sub.test?.title?.trim() || ''
-  let candidate = `${name} - ${test}`
-  if (candidate.length > 31) {
-    const prefixLen = name.length + 3
-    const maxTest = 31 - prefixLen
-    candidate = maxTest > 0 ? `${name} - ${test.substring(0, maxTest)}` : name.substring(0, 31)
-  }
-  candidate = candidate.replace(/[[\]:*?\/\\]/g, '')
-  if (candidate.length > 31) candidate = candidate.substring(0, 31)
-
-  if (!used.has(candidate)) { used.add(candidate); return candidate }
-  let i = 1
-  while (true) {
-    const suffix = `(${i})`
-    const alt = candidate.substring(0, 31 - suffix.length) + suffix
-    if (!used.has(alt)) { used.add(alt); return alt }
-    i++
-  }
+function sheetId(sub: any): string {
+  return sub.id.replace(/[[\]:*?\/\\]/g, '').substring(0, 31)
 }
 
 function statusText(vr: any): string {
@@ -41,39 +23,33 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
   // ── Summary columns ──
   summarySheet.columns = [
     { header: 'Test Nomi', key: 'testTitle', width: 30 },
-    { header: 'Ism', key: 'firstName', width: 15 },
-    { header: 'Familiya', key: 'lastName', width: 15 },
+    { header: 'Ism', key: 'firstName', width: 32 },
     { header: 'Rol', key: 'role', width: 12 },
     { header: 'Etap / Mutaxassislik', key: 'level', width: 22 },
     { header: 'Sana', key: 'date', width: 22 },
     { header: 'Ball / Max', key: 'score', width: 12 },
     { header: 'Foiz', key: 'percentage', width: 10 },
-    { header: 'Batafsil', key: 'details', width: 14 },
   ]
 
-  // ── Track sheet names for dedup ──
-  const usedSheetNames = new Set<string>()
-
   submissions.forEach((sub) => {
-    const sName = makeSheetName(sub, usedSheetNames)
+    const sName = sheetId(sub)
 
     // ── Summary row ──
     const maxScore = sub.maxPossibleScore || sub.totalQuestions
     const pct = maxScore > 0 ? Math.round((sub.score / maxScore) * 100) : 0
+    const fullName = `${sub.firstName} ${sub.lastName}`
     const rowIdx = summarySheet.addRow({
       testTitle: sub.test?.title || "Noma'lum",
-      firstName: sub.firstName,
-      lastName: sub.lastName,
+      firstName: fullName,
       role: sub.role === 'STUDENT' ? 'Talaba' : "O'qituvchi",
       level: sub.level,
       date: new Date(sub.createdAt).toLocaleString('uz-UZ'),
       score: `${Number(sub.score).toFixed(1)} / ${maxScore}`,
       percentage: `${pct}%`,
-      details: "Ko'rish",
     })
-    const detailsCell = summarySheet.getCell(rowIdx.number, 9)
-    detailsCell.value = { text: "Ko'rish", hyperlink: `#${sName}!A1` }
-    detailsCell.font = { color: { argb: '2563EB' }, underline: true, bold: true }
+    const nameCell = summarySheet.getCell(rowIdx.number, 2)
+    nameCell.value = { text: fullName, hyperlink: `#${sName}!A1` }
+    nameCell.font = { color: { argb: '2563EB' }, underline: true, bold: true }
 
     // ── Detail sheet ──
     const detail = workbook.addWorksheet(sName)
@@ -222,15 +198,15 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
   summarySheet.eachRow((row, rn) => {
     if (rn > 1) {
       row.eachCell((cell, cn) => {
-        cell.alignment = { vertical: 'top', horizontal: cn === 2 || cn === 8 ? 'left' : 'center', wrapText: true }
-        if (cn === 8 && typeof cell.value === 'string' && cell.value.includes('%')) {
+        cell.alignment = { vertical: 'top', horizontal: cn === 2 ? 'left' : 'center', wrapText: true }
+        if (cn === 7 && typeof cell.value === 'string' && cell.value.includes('%')) {
           const v = parseInt(cell.value)
           cell.font = { bold: true, color: { argb: v >= 80 ? '10B981' : v >= 50 ? 'D97706' : 'EF4444' } }
         }
       })
     }
   })
-  summarySheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } }
+  summarySheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 7 } }
 
   // ── Export ──
   const t1 = Date.now()
