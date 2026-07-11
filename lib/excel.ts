@@ -1,15 +1,25 @@
 import ExcelJS from 'exceljs'
 
-function truncateName(name: string, max: number = 31): string {
-  const cleaned = name.replace(/[[\]:*?\/\\]/g, '')
-  if (cleaned.length <= max) return cleaned
-  return cleaned.substring(0, max - 3) + '...'
-}
+function makeSheetName(sub: any, used: Set<string>): string {
+  const name = `${sub.firstName?.trim() || ''} ${sub.lastName?.trim() || ''}`.trim()
+  const test = sub.test?.title?.trim() || ''
+  let candidate = `${name} - ${test}`
+  if (candidate.length > 31) {
+    const prefixLen = name.length + 3
+    const maxTest = 31 - prefixLen
+    candidate = maxTest > 0 ? `${name} - ${test.substring(0, maxTest)}` : name.substring(0, 31)
+  }
+  candidate = candidate.replace(/[[\]:*?\/\\]/g, '')
+  if (candidate.length > 31) candidate = candidate.substring(0, 31)
 
-function sheetNameFor(sub: any, idx: number): string {
-  const base = `Batafsil - ${sub.firstName} ${sub.lastName}`
-  const candidate = idx === 0 ? base : `${base} (${idx})`
-  return truncateName(candidate)
+  if (!used.has(candidate)) { used.add(candidate); return candidate }
+  let i = 1
+  while (true) {
+    const suffix = `(${i})`
+    const alt = candidate.substring(0, 31 - suffix.length) + suffix
+    if (!used.has(alt)) { used.add(alt); return alt }
+    i++
+  }
 }
 
 function statusText(vr: any): string {
@@ -42,13 +52,10 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
   ]
 
   // ── Track sheet names for dedup ──
-  const nameCount: Record<string, number> = {}
+  const usedSheetNames = new Set<string>()
 
-  submissions.forEach((sub, si) => {
-    // Dedup sheet name
-    const raw = `Batafsil - ${sub.firstName} ${sub.lastName}`
-    nameCount[raw] = (nameCount[raw] || 0) + 1
-    const sName = sheetNameFor(sub, nameCount[raw] - 1)
+  submissions.forEach((sub) => {
+    const sName = makeSheetName(sub, usedSheetNames)
 
     // ── Summary row ──
     const maxScore = sub.maxPossibleScore || sub.totalQuestions
