@@ -37,6 +37,7 @@ export default function ResultsPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean,
     type: 'single' | 'bulk',
@@ -181,6 +182,8 @@ export default function ResultsPage() {
   }
 
   const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
     try {
       const params = new URLSearchParams()
       params.set("role", filter)
@@ -189,14 +192,16 @@ export default function ResultsPage() {
       if (selectedDate) params.set("date", selectedDate)
       if (selectedTestId !== "ALL") params.set("testId", selectedTestId)
       params.set("export", "true")
-      
+
       const res = await fetch(`/api/admin/submissions?${params.toString()}`)
       const data = await res.json()
       const allData = data.submissions || []
-      exportSubmissionsToExcel(allData, filter, selectedLevel, selectedDate)
+      await exportSubmissionsToExcel(allData, filter, selectedLevel, selectedDate)
       toast.success(`Jami ${allData.length} ta natija yuklandi`)
     } catch {
       toast.error("Eksport qilishda xatolik")
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -235,12 +240,17 @@ export default function ResultsPage() {
               Tanlanganlarni o'chirish ({selectedIds.length})
             </motion.button>
           )}
-          <button 
+          <button
             onClick={handleExport}
-            className="btn-premium px-8 py-4 font-bold flex items-center gap-2"
+            disabled={exporting}
+            className="btn-premium px-8 py-4 font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Download className="w-5 h-5" />
-            Excelga yuklash (.xlsx)
+            {exporting ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Download className="w-5 h-5" />
+            )}
+            {exporting ? "Yuklanmoqda..." : "Excelga yuklash (.xlsx)"}
           </button>
         </div>
       </div>
