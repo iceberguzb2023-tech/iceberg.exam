@@ -145,8 +145,13 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
     }
 
     // ── VOCAB section ──
-    const vocabItems = sub.answers.filter((a: any) => Array.isArray(a.vocabularyResults))
-    if (vocabItems.length > 0) {
+    const allVocabItems: any[] = []
+    sub.answers.forEach((ans: any) => {
+      if (Array.isArray(ans.vocabularyResults)) {
+        ans.vocabularyResults.forEach((vr: any) => allVocabItems.push(vr))
+      }
+    })
+    if (allVocabItems.length > 0) {
       detail.addRow([])
       const titleR = detail.addRow(['VOCABULARY'])
       titleR.getCell(1).font = { bold: true, size: 13, color: { argb: colors.primary } }
@@ -159,28 +164,24 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
         c.alignment = { vertical: 'middle', horizontal: 'center' }
       })
 
-      let vIdx = 0
-      vocabItems.forEach((ans: any) => {
-        ans.vocabularyResults.forEach((vr: any) => {
-          vIdx++
-          const r = detail.addRow([
-            vIdx,
-            vr.word || '-',
-            vr.translation || '-',
-            vr.answer || '(Javob berilmagan)',
-            statusText(vr),
-            vr.feedback || '-',
-          ])
-          const statusCell = r.getCell(5)
-          if (vr.isCorrect === true) {
-            statusCell.font = { color: { argb: '10B981' }, bold: true }
-          } else if (vr.isMisspelled === true) {
-            statusCell.font = { color: { argb: 'D97706' }, bold: true }
-          } else if (vr.isCorrect === false) {
-            statusCell.font = { color: { argb: 'EF4444' }, bold: true }
-          }
-          r.getCell(6).alignment = { wrapText: true }
-        })
+      allVocabItems.forEach((vr: any, vIdx: number) => {
+        const r = detail.addRow([
+          vIdx + 1,
+          vr.word || '-',
+          vr.translation || '-',
+          vr.answer || '(Javob berilmagan)',
+          statusText(vr),
+          vr.feedback || '-',
+        ])
+        const statusCell = r.getCell(5)
+        if (vr.isCorrect === true) {
+          statusCell.font = { color: { argb: '10B981' }, bold: true }
+        } else if (vr.isMisspelled === true) {
+          statusCell.font = { color: { argb: 'D97706' }, bold: true }
+        } else if (vr.isCorrect === false) {
+          statusCell.font = { color: { argb: 'EF4444' }, bold: true }
+        }
+        r.getCell(6).alignment = { wrapText: true }
       })
     }
   })
