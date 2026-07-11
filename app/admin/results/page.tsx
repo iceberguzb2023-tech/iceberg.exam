@@ -184,6 +184,8 @@ export default function ResultsPage() {
   const handleExport = async () => {
     if (exporting) return
     setExporting(true)
+    const t0 = Date.now()
+    console.log(`[Export] Frontend boshlash — filter=${filter}, level=${selectedLevel}, search="${search}", date=${selectedDate}, testId=${selectedTestId}`)
     try {
       const params = new URLSearchParams()
       params.set("role", filter)
@@ -194,11 +196,18 @@ export default function ResultsPage() {
       params.set("export", "true")
 
       const res = await fetch(`/api/admin/submissions?${params.toString()}`)
+      const t1 = Date.now()
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       const allData = data.submissions || []
+      console.log(`[Export] API javob — ${allData.length} ta, ${t1 - t0}ms`)
+
       await exportSubmissionsToExcel(allData, filter, selectedLevel, selectedDate)
+      const t2 = Date.now()
+      console.log(`[Export] Frontend tugadi — jami ${t2 - t0}ms`)
       toast.success(`Jami ${allData.length} ta natija yuklandi`)
-    } catch {
+    } catch (err) {
+      console.error(`[Export] Xatolik:`, err)
       toast.error("Eksport qilishda xatolik")
     } finally {
       setExporting(false)

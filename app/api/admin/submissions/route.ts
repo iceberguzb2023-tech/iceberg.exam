@@ -51,6 +51,9 @@ export async function GET(req: NextRequest) {
     } as const
 
     if (exportAll) {
+      const exportStart = Date.now()
+      console.log(`[Export] Boshlash — role=${role}, level=${level}, search="${search}", date=${date}, testId=${testId}`)
+
       const submissions = await prisma.submission.findMany({
         where,
         select: {
@@ -61,6 +64,8 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { createdAt: "desc" },
       })
+
+      console.log(`[Export] API tugadi — ${submissions.length} ta submission, ${Date.now() - exportStart}ms`)
       return NextResponse.json({ submissions, total: submissions.length })
     }
 

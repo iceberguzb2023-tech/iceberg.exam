@@ -20,6 +20,9 @@ function statusText(vr: any): string {
 }
 
 export async function exportSubmissionsToExcel(submissions: any[], role: string, level: string = "Barcha", selectedDate?: string) {
+  const t0 = Date.now()
+  console.log(`[Export] Excel yaratish — ${submissions.length} ta submission, role=${role}, level=${level}`)
+
   const workbook = new ExcelJS.Workbook()
   const summarySheet = workbook.addWorksheet('Xulosa')
 
@@ -223,7 +226,13 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
   summarySheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } }
 
   // ── Export ──
+  const t1 = Date.now()
+  console.log(`[Export] Sheet yaratildi — ${workbook.worksheets.length} ta sheet, ${t1 - t0}ms`)
+
   const buffer = await workbook.xlsx.writeBuffer()
+  const t2 = Date.now()
+  console.log(`[Export] Buffer yozildi — ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB, ${t2 - t1}ms`)
+
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = window.URL.createObjectURL(blob)
   const dateStr = selectedDate || new Date().toISOString().split('T')[0]
@@ -235,4 +244,6 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
   link.click()
   document.body.removeChild(link)
   window.URL.revokeObjectURL(url)
+
+  console.log(`[Export] Yuklandi — ${fileName}, jami ${Date.now() - t0}ms`)
 }
