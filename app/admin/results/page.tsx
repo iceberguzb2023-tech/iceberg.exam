@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { 
   BarChart3, Download, Search, User, Calendar, Award, 
   ExternalLink, ChevronLeft, ChevronRight, Trash2, 
@@ -20,8 +20,12 @@ const TEACHER_LEVELS = [
   "4-5-6 level teachers"
 ]
 
+const LIMIT = 50
+
 export default function ResultsPage() {
   const [submissions, setSubmissions] = useState<any[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState("STUDENT")
   const [selectedLevel, setSelectedLevel] = useState("ALL")
@@ -29,8 +33,8 @@ export default function ResultsPage() {
   const [selectedDate, setSelectedDate] = useState("")
   const [allTests, setAllTests] = useState<any[]>([])
   const [selectedTestId, setSelectedTestId] = useState("ALL")
-  
-  // Selection & Deletion State
+  const searchTimer = useRef<NodeJS.Timeout | null>(null)
+
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
   const [confirmState, setConfirmState] = useState<{
@@ -39,66 +43,84 @@ export default function ResultsPage() {
     id?: string
   }>({ isOpen: false, type: 'single' })
 
-  useEffect(() => {
-    fetchResults()
-  }, [])
+  const buildUrl = useCallback((p: number) => {
+    const params = new URLSearchParams()
+    params.set("role", filter)
+    if (selectedLevel !== "ALL") params.set("level", selectedLevel)
+    if (search.trim()) params.set("search", search.trim())
+    if (selectedDate) params.set("date", selectedDate)
+    if (selectedTestId !== "ALL") params.set("testId", selectedTestId)
+    params.set("page", String(p))
+    params.set("limit", String(LIMIT))
+    return `/api/admin/submissions?${params.toString()}`
+  }, [filter, selectedLevel, search, selectedDate, selectedTestId])
 
-  useEffect(() => {
-    fetchTests()
-  }, [filter, selectedLevel])
+  const fetchResults = useCallback(async (p: number) => {
+    setLoading(true)
+    try {
+      const res = await fetch(buildUrl(p))
+      const data = await res.json()
+      if (data.error) {
+        toast.error("Ma'lumotlarni yuklashda xatolik yuz berdi")
+        return
+      }
+      setSubmissions(data.submissions || [])
+      setTotal(data.total || 0)
+      setPage(data.page || p)
+    } catch {
+      toast.error("Server bilan bog'lanishda xatolik")
+    } finally {
+      setLoading(false)
+    }
+  }, [buildUrl])
 
-  const fetchTests = async () => {
+  const fetchTests = useCallback(async () => {
     if (selectedLevel === "ALL") {
       setAllTests([])
       setSelectedTestId("ALL")
       return
     }
-
     try {
       const res = await fetch(`/api/tests?role=${filter}&level=${selectedLevel}`)
       const data = await res.json()
-      if (Array.isArray(data)) {
-        setAllTests(data)
-      }
-    } catch (err) {
-      console.error("Fetch tests error:", err)
+      if (Array.isArray(data)) setAllTests(data)
+    } catch {
+      console.error("Fetch tests error")
     }
+  }, [filter, selectedLevel])
+
+  useEffect(() => {
+    fetchTests()
+  }, [fetchTests])
+
+  useEffect(() => {
+    fetchResults(1)
+  }, [filter, selectedLevel, selectedDate, selectedTestId, fetchResults])
+
+  // Debounced search
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setPage(1)
+      fetchResults(1)
+    }, 400)
   }
 
-  const fetchResults = async () => {
-    try {
-      const res = await fetch("/api/admin/submissions")
-      const data = await res.json()
-      
-      if (data.error) {
-        toast.error("Ma'lumotlarni yuklashda xatolik yuz berdi")
-        setSubmissions([])
-        return
-      }
-      
-      setSubmissions(Array.isArray(data) ? data : [])
-    } catch (err) {
-      toast.error("Server bilan bog'lanishda xatolik")
-      setSubmissions([])
-    } finally {
-      setLoading(false)
+  // Cleanup timer
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current)
     }
-  }
+  }, [])
 
-  const filteredSubmissions = submissions.filter(s => {
-    const searchMatch = (s.firstName?.toLowerCase() || "").includes(search.toLowerCase()) || 
-                       (s.lastName?.toLowerCase() || "").includes(search.toLowerCase())
-    const levelMatch = selectedLevel === "ALL" || s.level === selectedLevel
-    
-    // Date filter logic
-    const submissionDate = new Date(s.createdAt).toISOString().split('T')[0]
-    const dateMatch = !selectedDate || submissionDate === selectedDate
-    
-    // Test filter logic
-    const testMatch = selectedTestId === "ALL" || s.testId === selectedTestId
-    
-    return s.role === filter && searchMatch && levelMatch && dateMatch && testMatch
-  })
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT))
+
+  const handlePageChange = (p: number) => {
+    if (p < 1 || p > totalPages) return
+    setSelectedIds([])
+    fetchResults(p)
+  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => 
@@ -107,10 +129,10 @@ export default function ResultsPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredSubmissions.length) {
+    if (selectedIds.length === submissions.length) {
       setSelectedIds([])
     } else {
-      setSelectedIds(filteredSubmissions.map(s => s.id))
+      setSelectedIds(submissions.map(s => s.id))
     }
   }
 
@@ -130,6 +152,7 @@ export default function ResultsPage() {
         if (res.ok) {
           setSubmissions(prev => prev.filter(s => s.id !== confirmState.id))
           setSelectedIds(prev => prev.filter(i => i !== confirmState.id))
+          setTotal(prev => prev - 1)
           toast.success("Natija muvaffaqiyatli o'chirildi")
         } else {
           toast.error("O'chirishda xatolik yuz berdi")
@@ -143,12 +166,13 @@ export default function ResultsPage() {
         if (res.ok) {
           setSubmissions(prev => prev.filter(s => !selectedIds.includes(s.id)))
           setSelectedIds([])
+          setTotal(prev => prev - selectedIds.length)
           toast.success("Tanlangan natijalar o'chirildi")
         } else {
           toast.error("Ommaviy o'chirishda xatolik yuz berdi")
         }
       }
-    } catch (err) {
+    } catch {
       toast.error("Tizimda kutilmagan xatolik")
     } finally {
       setIsDeleting(false)
@@ -156,13 +180,43 @@ export default function ResultsPage() {
     }
   }
 
-  const handleExport = () => {
-    exportSubmissionsToExcel(filteredSubmissions, filter, selectedLevel, selectedDate)
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams()
+      params.set("role", filter)
+      if (selectedLevel !== "ALL") params.set("level", selectedLevel)
+      if (search.trim()) params.set("search", search.trim())
+      if (selectedDate) params.set("date", selectedDate)
+      if (selectedTestId !== "ALL") params.set("testId", selectedTestId)
+      params.set("export", "true")
+      
+      const res = await fetch(`/api/admin/submissions?${params.toString()}`)
+      const data = await res.json()
+      const allData = data.submissions || []
+      exportSubmissionsToExcel(allData, filter, selectedLevel, selectedDate)
+      toast.success(`Jami ${allData.length} ta natija yuklandi`)
+    } catch {
+      toast.error("Eksport qilishda xatolik")
+    }
+  }
+
+  const handleFilterChange = (newFilter: string) => {
+    setFilter(newFilter)
+    setSelectedLevel("ALL")
+    setSelectedTestId("ALL")
+    setSearch("")
+    setSelectedDate("")
+    setSelectedIds([])
+  }
+
+  const handleLevelChange = (value: string) => {
+    setSelectedLevel(value)
+    setSelectedTestId("ALL")
+    setSelectedIds([])
   }
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black font-outfit mb-2">Imtihon Natijalari</h1>
@@ -191,17 +245,16 @@ export default function ResultsPage() {
         </div>
       </div>
 
-      {/* Filters & Search */}
       <div className="flex flex-col md:flex-row gap-4 items-center bg-slate-900/40 p-4 rounded-lg border border-white/5">
         <div className="flex bg-slate-950 p-1 rounded-lg border border-white/5">
           <button 
-            onClick={() => { setFilter("STUDENT"); setSelectedLevel("ALL"); setSelectedIds([]); }}
+            onClick={() => handleFilterChange("STUDENT")}
             className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${filter === "STUDENT" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"}`}
           >
             Talabalar
           </button>
           <button 
-            onClick={() => { setFilter("TEACHER"); setSelectedLevel("ALL"); setSelectedIds([]); }}
+            onClick={() => handleFilterChange("TEACHER")}
             className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${filter === "TEACHER" ? "bg-primary text-white shadow-sm" : "text-muted-foreground"}`}
           >
             O'qituvchilar
@@ -211,7 +264,7 @@ export default function ResultsPage() {
         <div className="flex flex-wrap gap-4 items-center">
           <select 
             value={selectedLevel}
-            onChange={(e) => { setSelectedLevel(e.target.value); setSelectedTestId("ALL"); setSelectedIds([]); }}
+            onChange={(e) => handleLevelChange(e.target.value)}
             className="bg-slate-950 border border-white/5 rounded-lg py-2.5 px-4 text-sm font-bold focus:border-primary outline-none text-white/80"
           >
             <option value="ALL">Barcha {filter === "STUDENT" ? "Etaplar" : "Darajalar"}</option>
@@ -240,7 +293,6 @@ export default function ResultsPage() {
           )}
         </div>
 
-        {/* Date Filter */}
         <div className="relative group min-w-[180px]">
           <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-hover:text-primary transition-colors pointer-events-none" />
           <input 
@@ -265,18 +317,17 @@ export default function ResultsPage() {
             type="text" 
             placeholder="Ism yoki familiya bo'yicha qidirish..." 
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setSelectedIds([]); }}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="w-full bg-slate-950 border border-white/5 rounded-lg py-3 pl-12 pr-4 focus:border-primary outline-none transition-all"
           />
         </div>
       </div>
 
-      {/* Results Table/Cards */}
       {loading ? (
         <div className="h-64 flex items-center justify-center">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : filteredSubmissions.length === 0 ? (
+      ) : submissions.length === 0 ? (
         <div className="h-64 flex flex-col items-center justify-center text-muted-foreground bg-slate-900/40 rounded-lg border border-dashed border-white/10">
           <Search className="w-12 h-12 mb-4 opacity-20" />
           <p className="font-bold">Hech qanday natija topilmadi</p>
@@ -290,7 +341,7 @@ export default function ResultsPage() {
                 <tr className="border-b border-white/5">
                   <th className="px-6 py-5 w-10">
                     <button onClick={toggleSelectAll} className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-primary transition-colors">
-                      {selectedIds.length === filteredSubmissions.length ? (
+                      {selectedIds.length === submissions.length ? (
                         <CheckSquare className="w-5 h-5 text-primary" />
                       ) : (
                         <Square className="w-5 h-5" />
@@ -306,17 +357,14 @@ export default function ResultsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.02]">
-                {filteredSubmissions.map((sub, idx) => {
+                {submissions.map((sub, idx) => {
                   const percentage = sub.totalQuestions > 0 ? Math.round((sub.score / sub.totalQuestions) * 100) : 0;
                   const statusColor = percentage >= 80 ? 'text-emerald-400' : percentage >= 50 ? 'text-amber-400' : 'text-rose-400';
                   const statusBg = percentage >= 80 ? 'bg-emerald-500/10 border-emerald-500/20' : percentage >= 50 ? 'bg-amber-500/10 border-amber-500/20' : 'bg-rose-500/10 border-rose-500/20';
                   const isSelected = selectedIds.includes(sub.id)
                   
                   return (
-                    <motion.tr 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: idx * 0.01 }}
+                    <tr 
                       key={sub.id}
                       className={`group hover:bg-white/[0.02] transition-colors ${isSelected ? 'bg-primary/5' : ''}`}
                     >
@@ -378,25 +426,36 @@ export default function ResultsPage() {
                           </button>
                         </div>
                       </td>
-                    </motion.tr>
+                    </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
           
-          {/* Mobile footer info */}
           <div className="p-4 bg-slate-950/30 border-t border-white/5 flex items-center justify-between text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">
-            <span>Jami: {filteredSubmissions.length} natija {selectedIds.length > 0 && `(${selectedIds.length} tasi tanlangan)`}</span>
-            <div className="flex gap-2">
-              <button className="p-2 hover:text-primary transition-colors disabled:opacity-20" disabled><ChevronLeft className="w-4 h-4" /></button>
-              <button className="p-2 hover:text-primary transition-colors disabled:opacity-20" disabled><ChevronRight className="w-4 h-4" /></button>
+            <span>Jami: {total} natija {selectedIds.length > 0 && `(${selectedIds.length} tasi tanlangan)`}</span>
+            <div className="flex gap-2 items-center">
+              <span className="text-slate-500">{page} / {totalPages}</span>
+              <button 
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page <= 1 || loading}
+                className="p-2 hover:text-primary transition-colors disabled:opacity-20"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page >= totalPages || loading}
+                className="p-2 hover:text-primary transition-colors disabled:opacity-20"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Confirmation Dialog */}
       <ConfirmDialog 
         isOpen={confirmState.isOpen}
         onClose={() => setConfirmState({ ...confirmState, isOpen: false })}
