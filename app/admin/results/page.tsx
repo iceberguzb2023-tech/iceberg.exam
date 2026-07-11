@@ -358,7 +358,8 @@ export default function ResultsPage() {
               </thead>
               <tbody className="divide-y divide-white/[0.02]">
                 {submissions.map((sub, idx) => {
-                  const percentage = sub.totalQuestions > 0 ? Math.round((sub.score / sub.totalQuestions) * 100) : 0;
+                  const maxScore = sub.maxPossibleScore || sub.totalQuestions;
+                  const percentage = maxScore > 0 ? Math.round((sub.score / maxScore) * 100) : 0;
                   const statusColor = percentage >= 80 ? 'text-emerald-400' : percentage >= 50 ? 'text-amber-400' : 'text-rose-400';
                   const statusBg = percentage >= 80 ? 'bg-emerald-500/10 border-emerald-500/20' : percentage >= 50 ? 'bg-amber-500/10 border-amber-500/20' : 'bg-rose-500/10 border-rose-500/20';
                   const isSelected = selectedIds.includes(sub.id)
@@ -404,7 +405,7 @@ export default function ResultsPage() {
                             {percentage}%
                           </div>
                           <div className="text-[10px] text-slate-600 font-bold">
-                            {sub.score?.toFixed(2)} / {sub.totalQuestions}
+                            {sub.score?.toFixed(2)} / {maxScore}
                           </div>
                         </div>
                       </td>

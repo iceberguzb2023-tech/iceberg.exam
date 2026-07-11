@@ -27,7 +27,7 @@ export default function AdminDashboard() {
       const students = subs.filter((s: any) => s.role === "STUDENT").length
       const teachers = subs.filter((s: any) => s.role === "TEACHER").length
       const avg = subs.length > 0 
-        ? (subs.reduce((acc: any, curr: any) => acc + (curr.score / curr.totalQuestions), 0) / subs.length) * 100 
+        ? (subs.reduce((acc: any, curr: any) => acc + (curr.score / (curr.maxPossibleScore || curr.totalQuestions)), 0) / subs.length) * 100 
         : 0
 
       setStats({

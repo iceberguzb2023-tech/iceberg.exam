@@ -1,22 +1,31 @@
 import ExcelJS from 'exceljs'
 
+function truncateName(name: string, max: number = 31): string {
+  const cleaned = name.replace(/[[\]:*?\/\\]/g, '')
+  if (cleaned.length <= max) return cleaned
+  return cleaned.substring(0, max - 3) + '...'
+}
+
+function sheetNameFor(sub: any, idx: number): string {
+  const base = `Batafsil - ${sub.firstName} ${sub.lastName}`
+  const candidate = idx === 0 ? base : `${base} (${idx})`
+  return truncateName(candidate)
+}
+
+function statusText(vr: any): string {
+  if (vr.isCorrect === true) return "To'g'ri"
+  if (vr.isMisspelled === true) return "Imlo xato"
+  if (vr.isCorrect === false) return "Xato"
+  return "-"
+}
+
 export async function exportSubmissionsToExcel(submissions: any[], role: string, level: string = "Barcha", selectedDate?: string) {
   const workbook = new ExcelJS.Workbook()
-  
-  // Sheet 1: Xulosa (Summary)
   const summarySheet = workbook.addWorksheet('Xulosa')
-  // Sheet 2: Batafsil Natijalar (Details)
-  const detailSheet = workbook.addWorksheet('Batafsil Javoblar')
 
-  // Theme Colors
-  const colors = {
-    primary: '4F46E5',
-    headerBg: '0F172A',
-    headerText: 'FFFFFF',
-    border: 'E2E8F0',
-  }
+  const colors = { primary: '4F46E5', headerBg: '0F172A', headerText: 'FFFFFF', border: 'E2E8F0' }
 
-  // --- 1. Summary Sheet Setup ---
+  // ── Summary columns ──
   summarySheet.columns = [
     { header: 'Test Nomi', key: 'testTitle', width: 30 },
     { header: 'Ism', key: 'firstName', width: 15 },
@@ -26,147 +35,199 @@ export async function exportSubmissionsToExcel(submissions: any[], role: string,
     { header: 'Sana', key: 'date', width: 22 },
     { header: 'Ball / Max', key: 'score', width: 12 },
     { header: 'Foiz', key: 'percentage', width: 10 },
+    { header: 'Batafsil', key: 'details', width: 14 },
   ]
 
-  // --- 2. Detail Sheet Setup ---
-  detailSheet.columns = [
-    { header: 'O\'quvchi', key: 'student', width: 25 },
-    { header: 'Sana', key: 'date', width: 22 },
-    { header: 'Test', key: 'testTitle', width: 25 },
-    { header: 'Savol #', key: 'qNum', width: 10 },
-    { header: 'Savol Matni', key: 'qText', width: 60 },
-    { header: 'O\'quvchi Javobi', key: 'userAnswer', width: 40 },
-    { header: 'To\'g\'ri Javob', key: 'cAnswer', width: 30 },
-    { header: 'Holat', key: 'status', width: 20 },
-    { header: 'AI Ball', key: 'aiScore', width: 10 },
-    { header: 'AI Fikr', key: 'aiFeedback', width: 40 },
-  ]
+  // ── Track sheet names for dedup ──
+  const nameCount: Record<string, number> = {}
 
-  // --- 3. Fill Data ---
-  submissions.forEach(sub => {
-    const percentage = sub.totalQuestions > 0 ? Math.round((sub.score / sub.totalQuestions) * 100) : 0
-    const studentName = `${sub.firstName} ${sub.lastName}`
-    const submissionDate = new Date(sub.createdAt).toLocaleString('uz-UZ')
-    const testTitle = sub.test?.title || "Noma'lum"
+  submissions.forEach((sub, si) => {
+    // Dedup sheet name
+    const raw = `Batafsil - ${sub.firstName} ${sub.lastName}`
+    nameCount[raw] = (nameCount[raw] || 0) + 1
+    const sName = sheetNameFor(sub, nameCount[raw] - 1)
 
-    // Add to Summary
-    summarySheet.addRow({
-      testTitle: testTitle,
+    // ── Summary row ──
+    const maxScore = sub.maxPossibleScore || sub.totalQuestions
+    const pct = maxScore > 0 ? Math.round((sub.score / maxScore) * 100) : 0
+    const rowIdx = summarySheet.addRow({
+      testTitle: sub.test?.title || "Noma'lum",
       firstName: sub.firstName,
       lastName: sub.lastName,
-      role: sub.role === 'STUDENT' ? 'Talaba' : 'O\'qituvchi',
+      role: sub.role === 'STUDENT' ? 'Talaba' : "O'qituvchi",
       level: sub.level,
-      date: submissionDate,
-      score: `${Number(sub.score).toFixed(1)} / ${sub.totalQuestions}`,
-      percentage: `${percentage}%`,
+      date: new Date(sub.createdAt).toLocaleString('uz-UZ'),
+      score: `${Number(sub.score).toFixed(1)} / ${maxScore}`,
+      percentage: `${pct}%`,
+      details: "Ko'rish",
+    })
+    const detailsCell = summarySheet.getCell(rowIdx.number, 9)
+    detailsCell.value = { text: "Ko'rish", hyperlink: `#${sName}!A1` }
+    detailsCell.font = { color: { argb: '2563EB' }, underline: true, bold: true }
+
+    // ── Detail sheet ──
+    const detail = workbook.addWorksheet(sName)
+
+    // Header block
+    const header = [
+      ['ISMI', `${sub.firstName} ${sub.lastName}`],
+      ['TEST', sub.test?.title || "Noma'lum"],
+      ['SANA', new Date(sub.createdAt).toLocaleString('uz-UZ')],
+      ['BALL', `${Number(sub.score).toFixed(2)} / ${maxScore} (${pct}%)`],
+      ['', ''],
+    ]
+    header.forEach(([label, value]) => {
+      const r = detail.addRow([label, value])
+      r.getCell(1).font = { bold: true, color: { argb: colors.primary }, size: 11 }
+      r.getCell(2).font = { size: 11 }
     })
 
-    // Add to Details (One row per question / vocabulary item)
-    if (Array.isArray(sub.answers)) {
-      let rowCounter = 0
-      sub.answers.forEach((ans: any, idx: number) => {
-        const question = sub.test?.questions?.find((q: any) => q.id === ans.questionId)
-        const qText = ans.questionText || question?.text || `Savol [ID: ${ans.questionId?.slice(-6)}]`
+    if (!Array.isArray(sub.answers) || sub.answers.length === 0) {
+      detail.addRow([])
+      detail.addRow(['Javoblar topilmadi'])
+      return
+    }
 
-        // VOCABULARY: one row per vocabulary item
-        if (ans.vocabularyResults && Array.isArray(ans.vocabularyResults)) {
-          ans.vocabularyResults.forEach((vr: any) => {
-            rowCounter++
-            const status = vr.isCorrect === true ? "✅ To'g'ri" : vr.isCorrect === false ? "❌ Xato" : "-"
-            detailSheet.addRow({
-              student: studentName,
-              date: submissionDate,
-              testTitle: testTitle,
-              qNum: rowCounter,
-              qText: `${qText} - ${vr.word}`,
-              userAnswer: vr.answer || "(Javob berilmagan)",
-              cAnswer: vr.translation || "-",
-              status: status,
-              aiScore: "",
-              aiFeedback: "",
-            })
-          })
+    const colW = (w: number) => ({ width: w })
+
+    // ── MCQ section ──
+    const mcqItems = sub.answers.filter((a: any) => a.isCorrect !== undefined && a.isCorrect !== null)
+    if (mcqItems.length > 0) {
+      detail.addRow([])
+      const titleR = detail.addRow(['VARIANTLI SAVOLLAR'])
+      titleR.getCell(1).font = { bold: true, size: 13, color: { argb: colors.primary } }
+
+      detail.columns = [colW(6), colW(50), colW(20), colW(20), colW(12)]
+      const hdr = detail.addRow(['#', 'Savol', "Talaba javobi", "To'g'ri javob", 'Holat'])
+      hdr.eachCell(c => {
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.headerBg } }
+        c.font = { color: { argb: colors.headerText }, bold: true, size: 10 }
+        c.alignment = { vertical: 'middle', horizontal: 'center' }
+      })
+
+      mcqItems.forEach((ans: any, idx: number) => {
+        const q = sub.test?.questions?.find((q: any) => q.id === ans.questionId)
+        const r = detail.addRow([
+          idx + 1,
+          ans.questionText || q?.text || '-',
+          ans.answer || '(Javob berilmagan)',
+          ans.correctAnswer || q?.correctAnswer || '-',
+          ans.isCorrect ? "To'g'ri" : 'Xato',
+        ])
+        const statusCell = r.getCell(5)
+        if (ans.isCorrect) {
+          statusCell.font = { color: { argb: '10B981' }, bold: true }
         } else {
-          rowCounter++
-          const userAnswer = ans.answer !== undefined && ans.answer !== null ? ans.answer : "(Javob berilmagan)"
-          const cAnswer = ans.correctAnswer || question?.correctAnswer || "-"
-          const isCorrect = ans.isCorrect
-          const aiScore = ans.aiScore !== undefined ? ans.aiScore : ""
-          const aiFeedback = ans.aiFeedback || ""
-
-          let status = ""
-          if (isCorrect === true) status = "✅ To'g'ri"
-          else if (isCorrect === false) status = "❌ Xato"
-          else if (aiScore !== "") status = `AI: ${(aiScore * 100).toFixed(0)}%`
-          else status = "📝 Ochiq savol"
-
-          detailSheet.addRow({
-            student: studentName,
-            date: submissionDate,
-            testTitle: testTitle,
-            qNum: rowCounter,
-            qText: qText,
-            userAnswer: typeof userAnswer === 'object' ? JSON.stringify(userAnswer) : String(userAnswer),
-            cAnswer: cAnswer,
-            status: status,
-            aiScore: aiScore !== "" ? aiScore.toFixed(2) : "",
-            aiFeedback: aiFeedback,
-          })
+          statusCell.font = { color: { argb: 'EF4444' }, bold: true }
         }
+        r.getCell(2).alignment = { wrapText: true }
+      })
+    }
+
+    // ── OPEN section ──
+    const openItems = sub.answers.filter((a: any) => a.aiScore !== undefined && a.aiScore !== null)
+    if (openItems.length > 0) {
+      detail.addRow([])
+      const titleR = detail.addRow(['OCHIQ SAVOLLAR'])
+      titleR.getCell(1).font = { bold: true, size: 13, color: { argb: colors.primary } }
+
+      detail.columns = [colW(6), colW(50), colW(30), colW(10), colW(50)]
+      const hdr = detail.addRow(['#', 'Savol', "Talaba javobi", 'AI ball', "AI fikr"])
+      hdr.eachCell(c => {
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.headerBg } }
+        c.font = { color: { argb: colors.headerText }, bold: true, size: 10 }
+        c.alignment = { vertical: 'middle', horizontal: 'center' }
+      })
+
+      openItems.forEach((ans: any, idx: number) => {
+        const q = sub.test?.questions?.find((q: any) => q.id === ans.questionId)
+        const r = detail.addRow([
+          idx + 1,
+          ans.questionText || q?.text || '-',
+          ans.answer || '(Javob berilmagan)',
+          ans.aiScore.toFixed(2),
+          ans.aiFeedback || '-',
+        ])
+        r.getCell(2).alignment = { wrapText: true }
+        r.getCell(3).alignment = { wrapText: true }
+        r.getCell(5).alignment = { wrapText: true }
+        r.getCell(4).font = {
+          color: { argb: ans.aiScore >= 1.0 ? '10B981' : ans.aiScore >= 0.5 ? 'D97706' : 'EF4444' },
+          bold: true,
+        }
+      })
+    }
+
+    // ── VOCAB section ──
+    const vocabItems = sub.answers.filter((a: any) => Array.isArray(a.vocabularyResults))
+    if (vocabItems.length > 0) {
+      detail.addRow([])
+      const titleR = detail.addRow(['VOCABULARY'])
+      titleR.getCell(1).font = { bold: true, size: 13, color: { argb: colors.primary } }
+
+      detail.columns = [colW(6), colW(25), colW(25), colW(25), colW(15), colW(40)]
+      const hdr = detail.addRow(['#', "So'z", "To'g'ri tarjima", "Talaba javobi", 'Holat', 'AI fikr'])
+      hdr.eachCell(c => {
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.headerBg } }
+        c.font = { color: { argb: colors.headerText }, bold: true, size: 10 }
+        c.alignment = { vertical: 'middle', horizontal: 'center' }
+      })
+
+      let vIdx = 0
+      vocabItems.forEach((ans: any) => {
+        ans.vocabularyResults.forEach((vr: any) => {
+          vIdx++
+          const r = detail.addRow([
+            vIdx,
+            vr.word || '-',
+            vr.translation || '-',
+            vr.answer || '(Javob berilmagan)',
+            statusText(vr),
+            vr.feedback || '-',
+          ])
+          const statusCell = r.getCell(5)
+          if (vr.isCorrect === true) {
+            statusCell.font = { color: { argb: '10B981' }, bold: true }
+          } else if (vr.isMisspelled === true) {
+            statusCell.font = { color: { argb: 'D97706' }, bold: true }
+          } else if (vr.isCorrect === false) {
+            statusCell.font = { color: { argb: 'EF4444' }, bold: true }
+          }
+          r.getCell(6).alignment = { wrapText: true }
+        })
       })
     }
   })
 
-  // --- 4. Styling ---
-  const styleSheet = (sheet: ExcelJS.Worksheet) => {
-    // Header row
-    const headerRow = sheet.getRow(1)
-    headerRow.height = 30
-    headerRow.eachCell((cell) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.headerBg } }
-      cell.font = { color: { argb: colors.headerText }, bold: true, size: 11 }
-      cell.alignment = { vertical: 'middle', horizontal: 'center' }
-    })
+  // ── Style summary header ──
+  const sh = summarySheet.getRow(1)
+  sh.height = 30
+  sh.eachCell(c => {
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.headerBg } }
+    c.font = { color: { argb: colors.headerText }, bold: true, size: 11 }
+    c.alignment = { vertical: 'middle', horizontal: 'center' }
+  })
 
-    // Data rows
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber > 1) {
-        row.eachCell((cell, colNumber) => {
-          // Align large text to left, others to center
-          const isTextColumn = sheet === detailSheet && (colNumber === 5 || colNumber === 6 || colNumber === 10)
-          cell.alignment = { 
-            vertical: 'top', 
-            horizontal: isTextColumn ? 'left' : 'center', 
-            wrapText: true 
-          }
-          
-          // Color percentage in Summary sheet
-          if (sheet === summarySheet && colNumber === 8 && typeof cell.value === 'string' && cell.value.includes('%')) {
-            const val = parseInt(cell.value)
-            cell.font = { bold: true, color: { argb: val >= 80 ? '10B981' : val >= 50 ? 'F59E0B' : 'EF4444' } }
-          }
-        })
-      }
-    })
-    
-    // Add filtering
-    sheet.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: 1, column: sheet.columns.length }
+  // Style summary data + auto-filter
+  summarySheet.eachRow((row, rn) => {
+    if (rn > 1) {
+      row.eachCell((cell, cn) => {
+        cell.alignment = { vertical: 'top', horizontal: cn === 2 || cn === 8 ? 'left' : 'center', wrapText: true }
+        if (cn === 8 && typeof cell.value === 'string' && cell.value.includes('%')) {
+          const v = parseInt(cell.value)
+          cell.font = { bold: true, color: { argb: v >= 80 ? '10B981' : v >= 50 ? 'D97706' : 'EF4444' } }
+        }
+      })
     }
-  }
+  })
+  summarySheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } }
 
-  styleSheet(summarySheet)
-  styleSheet(detailSheet)
-
-  // --- 5. Export ---
+  // ── Export ──
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = window.URL.createObjectURL(blob)
-  
   const dateStr = selectedDate || new Date().toISOString().split('T')[0]
   const fileName = `ICE_Natijalar_${dateStr}.xlsx`
-
   const link = document.createElement('a')
   link.href = url
   link.setAttribute('download', fileName)

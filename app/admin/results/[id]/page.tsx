@@ -68,7 +68,8 @@ export default function SubmissionDetailPage() {
     }
     return acc + 1
   }, 0) || 0
-  const percentage = totalQuestions > 0 ? Math.round((submission.score / totalQuestions) * 100) : 0
+  const maxPossibleScore = submission.maxPossibleScore || totalQuestions
+  const percentage = maxPossibleScore > 0 ? Math.round((submission.score / maxPossibleScore) * 100) : 0
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -106,7 +107,7 @@ export default function SubmissionDetailPage() {
           </div>
 
           <div className="flex flex-col justify-center items-center md:border-x border-white/5 space-y-1 py-2">
-             <div className="text-3xl font-black font-outfit text-primary">{submission.score.toFixed(2)} <span className="text-base text-slate-700">/ {totalQuestions}</span></div>
+             <div className="text-3xl font-black font-outfit text-primary">{submission.score.toFixed(2)} <span className="text-base text-slate-700">/ {maxPossibleScore}</span></div>
              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">To'g'ri javoblar</p>
           </div>
 

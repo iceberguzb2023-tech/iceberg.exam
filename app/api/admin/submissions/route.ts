@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       level: true,
       score: true,
       totalQuestions: true,
+      maxPossibleScore: true,
       createdAt: true,
       testId: true,
       test: { select: { title: true } },
@@ -52,7 +53,12 @@ export async function GET(req: NextRequest) {
     if (exportAll) {
       const submissions = await prisma.submission.findMany({
         where,
-        select,
+        select: {
+          id: true, firstName: true, lastName: true, role: true, level: true,
+          score: true, totalQuestions: true, maxPossibleScore: true,
+          createdAt: true, testId: true, answers: true,
+          test: { include: { questions: true } },
+        },
         orderBy: { createdAt: "desc" },
       })
       return NextResponse.json({ submissions, total: submissions.length })

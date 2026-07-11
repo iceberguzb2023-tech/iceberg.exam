@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     const vocabForAI: { word: string; studentAnswer: string; qIdx: number; itemIdx: number }[] = []
     let score = 0
     let totalQuestions = 0
+    let openQuestionCount = 0
     const processedAnswers: any[] = []
 
     test.questions.forEach((q) => {
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
         })
       } else if (q.type === "OPEN") {
         totalQuestions++
+        openQuestionCount++
         processedAnswers.push({
           questionId: q.id,
           questionText: q.text,
@@ -144,7 +146,8 @@ export async function POST(req: NextRequest) {
     }
 
     score = Math.round(score * 100) / 100
-    console.log(`[Submission] Tayyor: score=${score}, total=${totalQuestions}`)
+    const maxPossibleScore = totalQuestions + openQuestionCount
+    console.log(`[Submission] Tayyor: score=${score}, total=${totalQuestions}, max=${maxPossibleScore}`)
 
     const submission = await prisma.submission.create({
       data: {
@@ -156,6 +159,7 @@ export async function POST(req: NextRequest) {
         answers: processedAnswers,
         score,
         totalQuestions,
+        maxPossibleScore,
       },
     })
 

@@ -40,9 +40,10 @@ model Submission {
   role           Role
   level          String?
   answers        Json
-  score          Float
-  totalQuestions Int
-  createdAt      DateTime @default(now())
+  score           Float
+  totalQuestions  Int
+  maxPossibleScore Int?
+  createdAt       DateTime @default(now())
   test           Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
 }
 
