@@ -73,13 +73,13 @@ async function callOpenAIBatch(
 
   let parsed: any;
   try {
-    parsed = JSON.parse(content);
+    parsed = JSON.parse(content) as any;
   } catch {
     console.error('[AI OPEN] XATO: JSON parse error');
     return null;
   }
 
-  let results = parsed.results || parsed;
+  const results = parsed.results || parsed;
   if (!Array.isArray(results)) {
     console.error('[AI OPEN] XATO: results not an array');
     return null;
