@@ -10,17 +10,103 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 
+const OPEN_BATCH_SIZE = 10;
+
+const OPEN_SCHEMA = {
+  name: 'open_grades',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      results: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            score: { type: 'number' },
+            feedback: { type: 'string' },
+          },
+          required: ['score', 'feedback'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['results'],
+    additionalProperties: false,
+  },
+} as const;
+
+const OPEN_SYSTEM_PROMPT =
+  'You are a strict but fair English exam grader. Grade each student answer against the model answer. ' +
+  'The student must answer in the SAME LANGUAGE as the model answer. ' +
+  "Return a JSON object with a 'results' array (SAME ORDER as input). " +
+  "Each result has: 'score' (0.2 to 2.0, float), 'feedback' (short explanation in Uzbek). " +
+  '0.2 = student wrote something but it is completely wrong. ' +
+  '0.3 to 2.0 = partially to fully correct. ' +
+  'Accept synonyms and minor spelling mistakes if the meaning is correct.';
+
+async function callOpenAIBatch(
+  items: { q: string; modelAnswer: string; studentAnswer: string }[],
+): Promise<{ score: number; feedback: string }[] | null> {
+  if (items.length === 0) return [];
+
+  const start = Date.now();
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: OPEN_SYSTEM_PROMPT },
+      { role: 'user', content: JSON.stringify(items) },
+    ],
+    response_format: { type: 'json_schema', json_schema: OPEN_SCHEMA },
+  });
+
+  const elapsed = Date.now() - start;
+  console.log(
+    `[AI OPEN] Batch: ${items.length} ta, ${elapsed}ms, tokens: ${response.usage?.total_tokens || '?'}`,
+  );
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    console.error('[AI OPEN] XATO: content bo\'sh!');
+    return null;
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    console.error('[AI OPEN] XATO: JSON parse error');
+    return null;
+  }
+
+  let results = parsed.results || parsed;
+  if (!Array.isArray(results)) {
+    console.error('[AI OPEN] XATO: results not an array');
+    return null;
+  }
+
+  return items.map((_, i) => {
+    const r = results[i];
+    if (!r) return { score: 0, feedback: 'Baholanmadi' };
+
+    let score = typeof r.score === 'number' ? r.score : 0.2;
+    score = Math.max(0.2, Math.min(2.0, score));
+    return { score, feedback: r.feedback || '' };
+  });
+}
+
 export async function evaluateOpenQuestions(
   questions: { q: string; modelAnswer: string; studentAnswer: string }[],
 ): Promise<{ score: number; feedback: string }[]> {
   if (!process.env.OPENAI_API_KEY) {
     console.error('[AI OPEN] XATO: OPENAI_API_KEY topilmadi!');
-    return fallbackScores(questions.length);
+    return Array.from({ length: questions.length }, () => ({
+      score: 0, feedback: 'Baholashda xatolik yuz berdi',
+    }));
   }
 
   if (questions.length === 0) return [];
 
-  // Split: empty answers → direct 0, non-empty → AI
   const emptyIndices: number[] = [];
   const nonEmptyItems: { q: string; modelAnswer: string; studentAnswer: string }[] = [];
   const nonEmptyIndices: number[] = [];
@@ -40,7 +126,6 @@ export async function evaluateOpenQuestions(
 
   const allResults: ({ score: number; feedback: string } | null)[] = questions.map(() => null);
 
-  // Empty answers → direct 0
   emptyIndices.forEach(i => {
     allResults[i] = { score: 0, feedback: 'Javob berilmagan' };
   });
@@ -49,107 +134,65 @@ export async function evaluateOpenQuestions(
     return allResults as { score: number; feedback: string }[];
   }
 
-  console.log(`[AI OPEN] ${nonEmptyItems.length} ta savolni baholash boshlandi...`);
+  // Batch grading with individual fallback on mismatch
+  for (
+    let batchStart = 0;
+    batchStart < nonEmptyItems.length;
+    batchStart += OPEN_BATCH_SIZE
+  ) {
+    const batchItems = nonEmptyItems.slice(batchStart, batchStart + OPEN_BATCH_SIZE);
+    const batchIndices = nonEmptyIndices.slice(batchStart, batchStart + OPEN_BATCH_SIZE);
 
-  try {
-    const start = Date.now();
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a strict but fair exam grader. Grade each student answer against the model answer. ' +
-            "Return a JSON object with a 'results' array. Each item has: 'score' (0.2 to 2.0, float), " +
-            "'feedback' (short explanation in Uzbek). " +
-            '0.2 = student wrote something but it is completely wrong. ' +
-            '0.3 to 2.0 = partially to fully correct. ' +
-            'Accept synonyms and minor spelling mistakes if the meaning is correct.',
-        },
-        {
-          role: 'user',
-          content: JSON.stringify(nonEmptyItems),
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
-    const elapsed = Date.now() - start;
-    console.log(
-      `[AI OPEN] Javob keldi: ${elapsed}ms, model: ${response.model}, status: ${response.usage?.total_tokens || '?'} tokens`,
-    );
+    console.log(`[AI OPEN] Batch ${Math.floor(batchStart / OPEN_BATCH_SIZE) + 1}: ${batchItems.length} ta`);
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      console.error("[AI OPEN] XATO: content bo'sh!");
-      nonEmptyIndices.forEach((origIdx) => {
-        allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
+    const batchResults = await callOpenAIBatch(batchItems);
+
+    if (batchResults && batchResults.length === batchItems.length) {
+      // Batch succeeded
+      batchResults.forEach((r, j) => {
+        allResults[batchIndices[j]] = r;
       });
-      return allResults as { score: number; feedback: string }[];
+      continue;
     }
 
-    const parsed = JSON.parse(content);
-    let results = parsed.results || parsed.scores || parsed.grades || parsed;
-
-    if (!Array.isArray(results) && typeof results === 'object' && results !== null) {
-      const keys = Object.keys(results);
-      if (keys.length > 0 && keys.every(k => !isNaN(Number(k)))) {
-        results = keys.sort((a, b) => Number(a) - Number(b)).map(k => results[k]);
-        console.log(`[AI OPEN] Object→Array: ${results.length} ta`);
+    // Count mismatch → grade each item individually
+    console.warn(`[AI OPEN] Batch count mismatch, grading ${batchItems.length} items individually...`);
+    for (let j = 0; j < batchItems.length; j++) {
+      const single = await callOpenAIBatch([batchItems[j]]);
+      if (single && single.length === 1) {
+        allResults[batchIndices[j]] = single[0];
+      } else {
+        allResults[batchIndices[j]] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
       }
     }
-
-    if (Array.isArray(results)) {
-      console.log(
-        `[AI OPEN] Muvaffaqiyatli: ${results.length} ta natija (kutilgan: ${nonEmptyItems.length})`,
-      );
-
-      nonEmptyItems.forEach((item, j) => {
-        const origIdx = nonEmptyIndices[j];
-        const r = results[j];
-        if (r) {
-          let score = typeof r.score === 'number' ? r.score : 0.2;
-          score = Math.max(0.2, Math.min(2.0, score));
-          allResults[origIdx] = {
-            score,
-            feedback: r.feedback || '',
-          };
-        } else {
-          allResults[origIdx] = { score: 0.2, feedback: 'Baholanmadi' };
-        }
-      });
-
-      return allResults as { score: number; feedback: string }[];
-    }
-
-    console.error(
-      `[AI OPEN] XATO: natijalar formati noto'g'ri, results:`,
-      typeof results,
-      Array.isArray(results) ? `length=${results.length}` : 'array emas',
-    );
-    nonEmptyIndices.forEach((origIdx) => {
-      allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
-    });
-    return allResults as { score: number; feedback: string }[];
-  } catch (error: any) {
-    console.error(
-      '[AI OPEN] XATO baholashda:',
-      error?.message || error,
-      error?.status ? `status=${error.status}` : '',
-      error?.code ? `code=${error.code}` : '',
-    );
-    nonEmptyIndices.forEach((origIdx) => {
-      allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
-    });
-    return allResults as { score: number; feedback: string }[];
   }
+
+  // Post-validation: any non-empty answer with 0.0 → re-grade individually
+  const zeroScoreNonEmpty: number[] = [];
+  nonEmptyIndices.forEach(origIdx => {
+    const r = allResults[origIdx];
+    if (r && r.score === 0) {
+      zeroScoreNonEmpty.push(origIdx);
+    }
+  });
+
+  if (zeroScoreNonEmpty.length > 0) {
+    console.warn(`[AI OPEN] Post-validation: ${zeroScoreNonEmpty.length} ta noto'g'ri 0.0 topildi, qayta baholanmoqda...`);
+    for (const origIdx of zeroScoreNonEmpty) {
+      const itemIdx = nonEmptyIndices.indexOf(origIdx);
+      const item = nonEmptyItems[itemIdx];
+      const single = await callOpenAIBatch([item]);
+      if (single && single.length === 1 && single[0].score > 0) {
+        allResults[origIdx] = single[0];
+      } else {
+        allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
+      }
+    }
+  }
+
+  return allResults as { score: number; feedback: string }[];
 }
 
-function fallbackScores(count: number): { score: number; feedback: string }[] {
-  return Array.from({ length: count }, () => ({
-    score: 0,
-    feedback: 'Baholashda xatolik yuz berdi',
-  }));
-}
 
 const VOCAB_BATCH_SIZE = 10;
 
