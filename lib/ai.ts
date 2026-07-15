@@ -20,27 +20,55 @@ export async function evaluateOpenQuestions(
 
   if (questions.length === 0) return [];
 
-  console.log(`[AI OPEN] ${questions.length} ta savolni baholash boshlandi...`);
+  // Split: empty answers → direct 0, non-empty → AI
+  const emptyIndices: number[] = [];
+  const nonEmptyItems: { q: string; modelAnswer: string; studentAnswer: string }[] = [];
+  const nonEmptyIndices: number[] = [];
+
+  questions.forEach((item, i) => {
+    if (!item.studentAnswer.trim()) {
+      emptyIndices.push(i);
+    } else {
+      nonEmptyItems.push(item);
+      nonEmptyIndices.push(i);
+    }
+  });
+
+  console.log(
+    `[AI OPEN] ${questions.length} ta: ${emptyIndices.length} bo'sh, ${nonEmptyItems.length} AI ga`,
+  );
+
+  const allResults: ({ score: number; feedback: string } | null)[] = questions.map(() => null);
+
+  // Empty answers → direct 0
+  emptyIndices.forEach(i => {
+    allResults[i] = { score: 0, feedback: 'Javob berilmagan' };
+  });
+
+  if (nonEmptyItems.length === 0) {
+    return allResults as { score: number; feedback: string }[];
+  }
+
+  console.log(`[AI OPEN] ${nonEmptyItems.length} ta savolni baholash boshlandi...`);
 
   try {
     const start = Date.now();
     const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'system',
           content:
             'You are a strict but fair exam grader. Grade each student answer against the model answer. ' +
-            "Return a JSON object with a 'results' array. Each item has: 'score' (0.0 to 2.0, float), " +
+            "Return a JSON object with a 'results' array. Each item has: 'score' (0.2 to 2.0, float), " +
             "'feedback' (short explanation in Uzbek). " +
-            '0.0 = empty answer (student wrote nothing). ' +
             '0.2 = student wrote something but it is completely wrong. ' +
             '0.3 to 2.0 = partially to fully correct. ' +
             'Accept synonyms and minor spelling mistakes if the meaning is correct.',
         },
         {
           role: 'user',
-          content: JSON.stringify(questions),
+          content: JSON.stringify(nonEmptyItems),
         },
       ],
       response_format: { type: 'json_object' },
@@ -53,7 +81,10 @@ export async function evaluateOpenQuestions(
     const content = response.choices[0]?.message?.content;
     if (!content) {
       console.error("[AI OPEN] XATO: content bo'sh!");
-      return fallbackScores(questions.length);
+      nonEmptyIndices.forEach((origIdx) => {
+        allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
+      });
+      return allResults as { score: number; feedback: string }[];
     }
 
     const parsed = JSON.parse(content);
@@ -69,25 +100,25 @@ export async function evaluateOpenQuestions(
 
     if (Array.isArray(results)) {
       console.log(
-        `[AI OPEN] Muvaffaqiyatli: ${results.length} ta natija (kutilgan: ${questions.length})`,
+        `[AI OPEN] Muvaffaqiyatli: ${results.length} ta natija (kutilgan: ${nonEmptyItems.length})`,
       );
-      return questions.map((_, i) => {
-        const r = results[i];
-        return r
-          ? {
-              score:
-                typeof r.score === 'number'
-                  ? r.score === 0
-                    ? 0
-                    : Math.max(0.2, Math.min(2.0, r.score))
-                  : 0.2,
-              feedback: r.feedback || '',
-            }
-          : {
-              score: 0,
-              feedback: 'Baholanmadi',
-            };
+
+      nonEmptyItems.forEach((item, j) => {
+        const origIdx = nonEmptyIndices[j];
+        const r = results[j];
+        if (r) {
+          let score = typeof r.score === 'number' ? r.score : 0.2;
+          score = Math.max(0.2, Math.min(2.0, score));
+          allResults[origIdx] = {
+            score,
+            feedback: r.feedback || '',
+          };
+        } else {
+          allResults[origIdx] = { score: 0.2, feedback: 'Baholanmadi' };
+        }
       });
+
+      return allResults as { score: number; feedback: string }[];
     }
 
     console.error(
@@ -95,7 +126,10 @@ export async function evaluateOpenQuestions(
       typeof results,
       Array.isArray(results) ? `length=${results.length}` : 'array emas',
     );
-    return fallbackScores(questions.length);
+    nonEmptyIndices.forEach((origIdx) => {
+      allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
+    });
+    return allResults as { score: number; feedback: string }[];
   } catch (error: any) {
     console.error(
       '[AI OPEN] XATO baholashda:',
@@ -103,7 +137,10 @@ export async function evaluateOpenQuestions(
       error?.status ? `status=${error.status}` : '',
       error?.code ? `code=${error.code}` : '',
     );
-    return fallbackScores(questions.length);
+    nonEmptyIndices.forEach((origIdx) => {
+      allResults[origIdx] = { score: 0.2, feedback: 'Baholashda xatolik yuz berdi' };
+    });
+    return allResults as { score: number; feedback: string }[];
   }
 }
 
